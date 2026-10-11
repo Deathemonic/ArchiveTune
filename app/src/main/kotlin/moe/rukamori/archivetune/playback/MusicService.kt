@@ -1157,7 +1157,10 @@ class MusicService :
                     mediaItemResolver =
                         object : CastMediaItemResolver {
                             override fun resolveForCast(mediaItem: MediaItem): MediaItem =
-                                resolveMediaItemForCast(mediaItem)
+                                resolveMediaItemForCast(mediaItem, blocking = false)
+
+                            override fun resolveForCastBlocking(mediaItem: MediaItem): MediaItem =
+                                resolveMediaItemForCast(mediaItem, blocking = true)
 
                             override fun mimeTypeForCast(mediaItem: MediaItem): String? =
                                 mediaItem.localConfiguration?.mimeType
@@ -7572,31 +7575,42 @@ class MusicService :
         }
     }
 
-    private fun resolveMediaItemForCast(mediaItem: MediaItem): MediaItem {
+    private fun resolveMediaItemForCast(
+        mediaItem: MediaItem,
+        blocking: Boolean,
+    ): MediaItem {
         val localConfiguration = mediaItem.localConfiguration ?: return mediaItem
         val uri = localConfiguration.uri
         if (uri.shouldBypassYouTubeResolver()) return mediaItem
         val mediaId = localConfiguration.customCacheKey ?: mediaItem.mediaId
         val lowDataModeActive = isLowDataModeActive()
+        val request =
+            AudioStreamRequest(
+                mediaId = mediaId,
+                quality = if (lowDataModeActive) AudioQuality.LOW else audioQuality,
+                networkMetered = lowDataModeActive,
+                purpose = StreamPurpose.PLAYBACK,
+                authState = YouTube.currentPlaybackAuthState(),
+            )
         val resolved =
-            resolveAudioStream.peek(
-                AudioStreamRequest(
-                    mediaId = mediaId,
-                    quality = if (lowDataModeActive) AudioQuality.LOW else audioQuality,
-                    networkMetered = lowDataModeActive,
-                    purpose = StreamPurpose.PLAYBACK,
-                    authState = YouTube.currentPlaybackAuthState(),
-                ),
-            ) ?: return mediaItem
+            if (blocking) {
+                resolveAudioStream.resolveBlocking(request)
+            } else {
+                resolveAudioStream.peek(request) ?: return mediaItem
+            }
         val resolvedMimeType =
             localConfiguration.mimeType.toCastMimeType()
                 ?: castMimeTypeCache.get(mediaId)
+                ?: resolved.castMimeType()
         return mediaItem
             .buildUpon()
             .setUri(resolved.url)
             .apply { resolvedMimeType?.let(::setMimeType) }
             .build()
     }
+
+    private fun ResolvedAudioStream.castMimeType(): String? =
+        if (codecs.isBlank()) mimeType.toCastMimeType() else "$mimeType; codecs=\"$codecs\"".toCastMimeType()
 
     private fun resolvePlaybackDataSpec(dataSpec: DataSpec): DataSpec {
         if (dataSpec.uri.shouldBypassYouTubeResolver()) {

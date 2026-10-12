@@ -1133,7 +1133,7 @@ class MainActivity : ComponentActivity() {
                             expandedBound = maxHeight,
                         )
                     var homeOverflowMenuExpanded by rememberSaveable { mutableStateOf(false) }
-                    var homeTopAppBarOverflowExpanded by rememberSaveable { mutableStateOf(false) }
+                    var topAppBarOverflowExpanded by rememberSaveable { mutableStateOf(false) }
                     val showHomeOverflowFab =
                         shouldShowHomeShuffleButton &&
                             !useRail &&
@@ -1145,9 +1145,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     LaunchedEffect(currentRoute) {
-                        if (currentRoute != Screens.Home.route) {
-                            homeTopAppBarOverflowExpanded = false
-                        }
+                        topAppBarOverflowExpanded = false
                     }
 
                     val playerBackground by rememberEnumPreference(
@@ -1908,192 +1906,96 @@ class MainActivity : ComponentActivity() {
                                                             latestUpdateChannel == updateChannel &&
                                                             latestUpdateChannel != UpdateChannel.ARTIFACT &&
                                                             Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
-                                                    if (currentRoute == Screens.Home.route) {
-                                                        val newsTooltipState = rememberTooltipState()
-                                                        val newsLifecycleOwner = LocalLifecycleOwner.current
-                                                        LaunchedEffect(
-                                                            latestUnreadNewsTimestamp,
-                                                            newsLifecycleOwner,
-                                                            newsTooltipState,
-                                                        ) {
-                                                            val timestamp = latestUnreadNewsTimestamp
-                                                            if (timestamp == null) {
-                                                                newsTooltipState.dismiss()
-                                                                return@LaunchedEffect
-                                                            }
-                                                            newsLifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                                                                if (newsViewModel.claimUnreadNewsTooltip(timestamp)) {
-                                                                    try {
-                                                                        newsTooltipState.show()
-                                                                    } finally {
-                                                                        newsTooltipState.dismiss()
-                                                                    }
+                                                    val newsTooltipState = rememberTooltipState()
+                                                    val newsLifecycleOwner = LocalLifecycleOwner.current
+                                                    LaunchedEffect(
+                                                        latestUnreadNewsTimestamp,
+                                                        newsLifecycleOwner,
+                                                        newsTooltipState,
+                                                    ) {
+                                                        val timestamp = latestUnreadNewsTimestamp
+                                                        if (timestamp == null) {
+                                                            newsTooltipState.dismiss()
+                                                            return@LaunchedEffect
+                                                        }
+                                                        newsLifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                                                            if (newsViewModel.claimUnreadNewsTooltip(timestamp)) {
+                                                                try {
+                                                                    newsTooltipState.show()
+                                                                } finally {
+                                                                    newsTooltipState.dismiss()
                                                                 }
                                                             }
                                                         }
-                                                        TooltipBox(
-                                                            positionProvider =
-                                                                if (hasUnreadNews) {
-                                                                    TooltipDefaults.rememberRichTooltipPositionProvider()
-                                                                } else {
-                                                                    TooltipDefaults.rememberPlainTooltipPositionProvider()
-                                                                },
-                                                            tooltip = {
-                                                                if (hasUnreadNews) {
-                                                                    RichTooltip(
-                                                                        title = { Text(stringResource(R.string.news_tooltip_title)) },
-                                                                    ) {
-                                                                        Text(stringResource(R.string.news_tooltip_body))
-                                                                    }
-                                                                } else {
-                                                                    PlainTooltip {
-                                                                        Text(stringResource(R.string.more_options))
-                                                                    }
-                                                                }
+                                                    }
+                                                    TooltipBox(
+                                                        positionProvider =
+                                                            if (hasUnreadNews) {
+                                                                TooltipDefaults.rememberRichTooltipPositionProvider()
+                                                            } else {
+                                                                TooltipDefaults.rememberPlainTooltipPositionProvider()
                                                             },
-                                                            state = newsTooltipState,
-                                                        ) {
-                                                            Box {
-                                                                TranslucentTopAppBarIconButton(
-                                                                    onClick = {
-                                                                        newsTooltipState.dismiss()
-                                                                        homeTopAppBarOverflowExpanded =
-                                                                            !homeTopAppBarOverflowExpanded
-                                                                    },
+                                                        tooltip = {
+                                                            if (hasUnreadNews) {
+                                                                RichTooltip(
+                                                                    title = { Text(stringResource(R.string.news_tooltip_title)) },
                                                                 ) {
-                                                                    BadgedBox(badge = {
-                                                                        if (hasUnreadNews || hasUpdateAvailable) {
-                                                                            Badge()
-                                                                        }
-                                                                    }) {
-                                                                        Icon(
-                                                                            painter = painterResource(R.drawable.more_horiz),
-                                                                            contentDescription =
-                                                                                stringResource(R.string.more_options),
-                                                                        )
-                                                                    }
+                                                                    Text(stringResource(R.string.news_tooltip_body))
                                                                 }
-                                                                HomeTopAppBarOverflowMenu(
-                                                                    expanded = homeTopAppBarOverflowExpanded,
-                                                                    pureBlack = pureBlack,
-                                                                    hasUnreadNews = hasUnreadNews,
-                                                                    hasUpdateAvailable = hasUpdateAvailable,
-                                                                    onDismissRequest = {
-                                                                        homeTopAppBarOverflowExpanded = false
-                                                                    },
-                                                                    onHistoryClick = {
-                                                                        homeTopAppBarOverflowExpanded = false
-                                                                        navController.navigate("history")
-                                                                    },
-                                                                    onNewsClick = {
-                                                                        newsTooltipState.dismiss()
-                                                                        homeTopAppBarOverflowExpanded = false
-                                                                        navController.navigate("news")
-                                                                    },
-                                                                    onNewReleaseClick = {
-                                                                        homeTopAppBarOverflowExpanded = false
-                                                                        navController.navigate("new_release")
-                                                                    },
-                                                                    onSettingsClick = {
-                                                                        homeTopAppBarOverflowExpanded = false
-                                                                        navController.navigate("settings")
-                                                                    },
-                                                                )
-                                                            }
-                                                        }
-                                                    } else {
-                                                        TranslucentTopAppBarIconButton(
-                                                            onClick = { navController.navigate("history") },
-                                                        ) {
-                                                            Icon(
-                                                                painter = painterResource(R.drawable.history),
-                                                                contentDescription = stringResource(R.string.history),
-                                                            )
-                                                        }
-                                                        val newsTooltipState = rememberTooltipState()
-                                                        val newsLifecycleOwner = LocalLifecycleOwner.current
-                                                        LaunchedEffect(
-                                                            latestUnreadNewsTimestamp,
-                                                            newsLifecycleOwner,
-                                                            newsTooltipState,
-                                                        ) {
-                                                            val timestamp = latestUnreadNewsTimestamp
-                                                            if (timestamp == null) {
-                                                                newsTooltipState.dismiss()
-                                                                return@LaunchedEffect
-                                                            }
-                                                            newsLifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                                                                if (newsViewModel.claimUnreadNewsTooltip(timestamp)) {
-                                                                    try {
-                                                                        newsTooltipState.show()
-                                                                    } finally {
-                                                                        newsTooltipState.dismiss()
-                                                                    }
+                                                            } else {
+                                                                PlainTooltip {
+                                                                    Text(stringResource(R.string.more_options))
                                                                 }
                                                             }
-                                                        }
-                                                        TooltipBox(
-                                                            positionProvider =
-                                                                if (hasUnreadNews) {
-                                                                    TooltipDefaults.rememberRichTooltipPositionProvider()
-                                                                } else {
-                                                                    TooltipDefaults.rememberPlainTooltipPositionProvider()
-                                                                },
-                                                            tooltip = {
-                                                                if (hasUnreadNews) {
-                                                                    RichTooltip(
-                                                                        title = { Text(stringResource(R.string.news_tooltip_title)) },
-                                                                    ) {
-                                                                        Text(stringResource(R.string.news_tooltip_body))
-                                                                    }
-                                                                } else {
-                                                                    PlainTooltip {
-                                                                        Text(stringResource(R.string.news))
-                                                                    }
-                                                                }
-                                                            },
-                                                            state = newsTooltipState,
-                                                        ) {
+                                                        },
+                                                        state = newsTooltipState,
+                                                    ) {
+                                                        Box {
                                                             TranslucentTopAppBarIconButton(
                                                                 onClick = {
                                                                     newsTooltipState.dismiss()
-                                                                    navController.navigate("news")
+                                                                    topAppBarOverflowExpanded =
+                                                                        !topAppBarOverflowExpanded
                                                                 },
                                                             ) {
                                                                 BadgedBox(badge = {
-                                                                    if (hasUnreadNews) {
+                                                                    if (hasUnreadNews || hasUpdateAvailable) {
                                                                         Badge()
                                                                     }
                                                                 }) {
                                                                     Icon(
-                                                                        painter = painterResource(R.drawable.newspaper),
-                                                                        contentDescription = stringResource(R.string.news),
+                                                                        painter = painterResource(R.drawable.more_horiz),
+                                                                        contentDescription =
+                                                                            stringResource(R.string.more_options),
                                                                     )
                                                                 }
                                                             }
-                                                        }
-                                                        TranslucentTopAppBarIconButton(
-                                                            onClick = { navController.navigate("new_release") },
-                                                        ) {
-                                                            Icon(
-                                                                painter = painterResource(R.drawable.new_release),
-                                                                contentDescription = stringResource(R.string.new_release_albums),
+                                                            TopAppBarOverflowMenu(
+                                                                expanded = topAppBarOverflowExpanded,
+                                                                pureBlack = pureBlack,
+                                                                hasUnreadNews = hasUnreadNews,
+                                                                hasUpdateAvailable = hasUpdateAvailable,
+                                                                onDismissRequest = {
+                                                                    topAppBarOverflowExpanded = false
+                                                                },
+                                                                onHistoryClick = {
+                                                                    topAppBarOverflowExpanded = false
+                                                                    navController.navigate("history")
+                                                                },
+                                                                onNewsClick = {
+                                                                    newsTooltipState.dismiss()
+                                                                    topAppBarOverflowExpanded = false
+                                                                    navController.navigate("news")
+                                                                },
+                                                                onNewReleaseClick = {
+                                                                    topAppBarOverflowExpanded = false
+                                                                    navController.navigate("new_release")
+                                                                },
+                                                                onSettingsClick = {
+                                                                    topAppBarOverflowExpanded = false
+                                                                    navController.navigate("settings")
+                                                                },
                                                             )
-                                                        }
-                                                        TranslucentTopAppBarIconButton(
-                                                            onClick = { navController.navigate("settings") },
-                                                        ) {
-                                                            BadgedBox(badge = {
-                                                                if (hasUpdateAvailable) {
-                                                                    Badge()
-                                                                }
-                                                            }) {
-                                                                Icon(
-                                                                    painter = painterResource(R.drawable.settings),
-                                                                    contentDescription = stringResource(R.string.settings),
-                                                                    modifier = Modifier.size(24.dp),
-                                                                )
-                                                            }
                                                         }
                                                     }
                                                 },
@@ -3315,7 +3217,7 @@ private fun HomeOverflowFab(
 }
 
 @Composable
-private fun HomeTopAppBarOverflowMenu(
+private fun TopAppBarOverflowMenu(
     expanded: Boolean,
     pureBlack: Boolean,
     hasUnreadNews: Boolean,

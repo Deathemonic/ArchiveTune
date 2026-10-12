@@ -88,6 +88,7 @@ import moe.rukamori.archivetune.utils.makeTimeString
 
 private val ImmersiveContentColor = Color.White
 private val ImmersiveSecondaryContentColor = Color.White.copy(alpha = 0.7f)
+private const val ImmersiveBackdropBlurRotationDegrees = -90f
 
 @Composable
 fun ImmersivePlayerScreen(

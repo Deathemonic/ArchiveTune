@@ -90,6 +90,7 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
+import com.mocharealm.accompanist.lyrics.ui.composable.list.rememberLyricsLazyListState
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.LyricsAnchor
 import kotlinx.coroutines.delay
@@ -225,7 +226,8 @@ fun LyricsEnhanced(
         remember(player) {
             mutableLongStateOf(player.currentPosition.coerceAtLeast(0L))
         }
-    val listState = key(lyricsSessionKey) { rememberLazyListState() }
+    val plainLyricsListState = key(lyricsSessionKey) { rememberLazyListState() }
+    val karaokeLyricsListState = key(lyricsSessionKey) { rememberLyricsLazyListState() }
 
     LaunchedEffect(lyricsSessionKey) {
         playbackPositionMs.longValue = player.currentPosition.coerceAtLeast(0L)
@@ -475,7 +477,7 @@ fun LyricsEnhanced(
             !isSynced -> {
                 PlainLyricsView(
                     lines = plainLyrics,
-                    listState = listState,
+                    listState = plainLyricsListState,
                     selectedLineKeys = selectedLineKeySet,
                     textColor = textColor,
                     textStyle = normalTextStyle,
@@ -505,7 +507,7 @@ fun LyricsEnhanced(
                     CompositionLocalProvider(LocalLayoutDirection provides lyricsLayoutDirection) {
                         key(lyricsSessionKey, syncedLyrics) {
                             KaraokeLyricsView(
-                                listState = listState,
+                                listState = karaokeLyricsListState,
                                 lyrics = syncedLyrics,
                                 currentPosition = playbackSyncPosition,
                                 onLineClicked = { line ->

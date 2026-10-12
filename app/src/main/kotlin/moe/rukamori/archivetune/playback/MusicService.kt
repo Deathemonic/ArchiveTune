@@ -176,6 +176,7 @@ import moe.rukamori.archivetune.constants.PauseOnDeviceMuteKey
 import moe.rukamori.archivetune.constants.PermanentShuffleKey
 import moe.rukamori.archivetune.constants.PersistentQueueKey
 import moe.rukamori.archivetune.constants.PlayerVolumeKey
+import moe.rukamori.archivetune.constants.PreventAudioInterruptionsKey
 import moe.rukamori.archivetune.constants.RepeatModeKey
 import moe.rukamori.archivetune.constants.ScrobbleDelayPercentKey
 import moe.rukamori.archivetune.constants.ScrobbleDelaySecondsKey
@@ -330,6 +331,8 @@ class MusicService :
     private var audioFocusRequest: AudioFocusRequest? = null
     private var lastAudioFocusState = AudioManager.AUDIOFOCUS_NONE
     private var wasPlayingBeforeAudioFocusLoss = false
+    private var preventAudioInterruptionsEnabled = false
+    private var ignoringAudioFocusLoss = false
     private var pauseOnDeviceMuteEnabled = false
     private var deviceMutePlaybackRecoveryVolumePercent = 0
     private var wasAutoPausedByDeviceMute = false
@@ -1368,6 +1371,16 @@ class MusicService :
                     unregisterMuteRecoveryObserver()
                 } else {
                     handleDeviceMuteStateChanged()
+                }
+            }
+
+        dataStore.data
+            .map { it[PreventAudioInterruptionsKey] ?: false }
+            .distinctUntilChanged()
+            .collectLatest(scope) { enabled ->
+                preventAudioInterruptionsEnabled = enabled
+                if (!enabled) {
+                    ignoringAudioFocusLoss = false
                 }
             }
 
@@ -3295,9 +3308,26 @@ class MusicService :
     }
 
     private fun handleAudioFocusChange(focusChange: Int) {
+        if (
+            preventAudioInterruptionsEnabled &&
+            (
+                focusChange == AudioManager.AUDIOFOCUS_LOSS ||
+                    focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
+                    focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK
+            )
+        ) {
+            hasAudioFocus = false
+            wasPlayingBeforeAudioFocusLoss = false
+            audioFocusVolumeFactor.value = 1f
+            ignoringAudioFocusLoss = true
+            lastAudioFocusState = focusChange
+            return
+        }
+
         when (focusChange) {
             AudioManager.AUDIOFOCUS_GAIN -> {
                 hasAudioFocus = true
+                ignoringAudioFocusLoss = false
                 audioFocusVolumeFactor.value = 1f
 
                 if (wasPlayingBeforeAudioFocusLoss) {
@@ -3310,6 +3340,7 @@ class MusicService :
 
             AudioManager.AUDIOFOCUS_LOSS -> {
                 hasAudioFocus = false
+                ignoringAudioFocusLoss = false
                 pauseForAudioFocusLoss(resumeWhenFocusReturns = false)
 
                 abandonAudioFocus()
@@ -3319,6 +3350,7 @@ class MusicService :
 
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                 hasAudioFocus = false
+                ignoringAudioFocusLoss = false
                 pauseForAudioFocusLoss(resumeWhenFocusReturns = true)
 
                 lastAudioFocusState = focusChange
@@ -3326,6 +3358,7 @@ class MusicService :
 
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 hasAudioFocus = false
+                ignoringAudioFocusLoss = false
                 pauseForAudioFocusLoss(resumeWhenFocusReturns = true)
 
                 lastAudioFocusState = focusChange
@@ -3333,6 +3366,7 @@ class MusicService :
 
             AudioManager.AUDIOFOCUS_GAIN_TRANSIENT -> {
                 hasAudioFocus = true
+                ignoringAudioFocusLoss = false
                 audioFocusVolumeFactor.value = 1f
 
                 if (wasPlayingBeforeAudioFocusLoss) {
@@ -3345,6 +3379,7 @@ class MusicService :
 
             AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK -> {
                 hasAudioFocus = true
+                ignoringAudioFocusLoss = false
                 audioFocusVolumeFactor.value = 1f
 
                 lastAudioFocusState = focusChange
@@ -3353,6 +3388,8 @@ class MusicService :
     }
 
     private fun requestAudioFocus(): Boolean {
+        if (ignoringAudioFocusLoss) return true
+
         if (hasAudioFocus) {
             if (audioFocusVolumeFactor.value != 1f || lastAudioFocusState == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
                 restoreAudioFocusVolume()
@@ -3378,6 +3415,7 @@ class MusicService :
                 hasAudioFocus = false
             }
         }
+        ignoringAudioFocusLoss = false
     }
 
     fun hasAudioFocusForPlayback(): Boolean = hasAudioFocus

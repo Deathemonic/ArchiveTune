@@ -159,6 +159,7 @@ import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.MenuState
 import moe.rukamori.archivetune.ui.component.PlayerSliderTrack
+import moe.rukamori.archivetune.ui.component.rememberControlledSliderState
 import moe.rukamori.archivetune.ui.component.ResizableIconButton
 import moe.rukamori.archivetune.ui.menu.PlayerMenu
 import moe.rukamori.archivetune.ui.theme.PlayerBackgroundColorUtils
@@ -817,10 +818,17 @@ fun StyledPlaybackSlider(
         }
 
         SliderStyle.Thick -> {
+            val sliderState =
+                rememberControlledSliderState(
+                    value = value,
+                    valueRange = valueRange,
+                )
             Slider(
-                value = value,
-                valueRange = valueRange,
-                onValueChange = onValueChange,
+                state = sliderState,
+                onValueChange = { updated ->
+                    sliderState.value = updated
+                    onValueChange(updated)
+                },
                 onValueChangeFinished = onValueChangeFinished,
                 colors = PlayerSliderColors.thickSliderColors(activeColor),
                 thumb = { Spacer(modifier = Modifier.size(0.dp)) },
@@ -852,10 +860,17 @@ fun StyledPlaybackSlider(
         }
 
         SliderStyle.Simple -> {
+            val sliderState =
+                rememberControlledSliderState(
+                    value = value,
+                    valueRange = valueRange,
+                )
             Slider(
-                value = value,
-                valueRange = valueRange,
-                onValueChange = onValueChange,
+                state = sliderState,
+                onValueChange = { updated ->
+                    sliderState.value = updated
+                    onValueChange(updated)
+                },
                 onValueChangeFinished = onValueChangeFinished,
                 colors = PlayerSliderColors.simpleSliderColors(activeColor),
                 thumb = { Spacer(modifier = Modifier.size(0.dp)) },
@@ -3030,11 +3045,18 @@ private fun V8FlatSlider(
             thumbColor = Color.Transparent,
             inactiveTrackColor = inactiveColor,
         )
+    val sliderState =
+        rememberControlledSliderState(
+            value = value.coerceIn(safeRange),
+            valueRange = safeRange,
+        )
 
     Slider(
-        value = value.coerceIn(safeRange),
-        valueRange = safeRange,
-        onValueChange = onValueChange,
+        state = sliderState,
+        onValueChange = { updated ->
+            sliderState.value = updated
+            onValueChange(updated)
+        },
         onValueChangeFinished = onValueChangeFinished,
         enabled = enabled,
         colors = colors,
@@ -5106,4 +5128,3 @@ internal fun formatEditorialTime(durationMs: Long): String {
     val seconds = totalSeconds % 60
     return String.format("%d:%02d", minutes, seconds)
 }
-

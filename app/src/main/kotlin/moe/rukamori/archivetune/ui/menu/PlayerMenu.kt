@@ -98,6 +98,7 @@ import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
 import moe.rukamori.archivetune.constants.SpeedDialSongIdsKey
 import moe.rukamori.archivetune.models.MediaMetadata
+import moe.rukamori.archivetune.ui.component.rememberControlledSliderState
 import moe.rukamori.archivetune.playback.CanvasArtworkRefetchResult
 import moe.rukamori.archivetune.playback.ExoDownloadService
 import moe.rukamori.archivetune.ui.component.BottomSheetState
@@ -1087,17 +1088,22 @@ private fun VolumeSliderL(
     LaunchedEffect(safeValue) {
         if (!isDragging) sliderValue = safeValue
     }
+    val sliderState =
+        rememberControlledSliderState(
+            value = sliderValue,
+            valueRange = 0f..1f,
+        )
 
     Slider(
-        value = sliderValue,
+        state = sliderState,
         onValueChange = { updated ->
             isDragging = true
             val coerced = updated.coerceIn(0f, 1f)
+            sliderState.value = coerced
             sliderValue = coerced
             onValueChange(coerced)
         },
         onValueChangeFinished = { isDragging = false },
-        valueRange = 0f..1f,
         modifier = modifier.height(36.dp),
         thumb = {
             Box(

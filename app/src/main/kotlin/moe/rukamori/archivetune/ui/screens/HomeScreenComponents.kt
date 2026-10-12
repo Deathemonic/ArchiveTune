@@ -302,7 +302,7 @@ fun QuickPicksSection(
 
                 HorizontalCenteredHeroCarousel(
                     state = rememberCarouselState { distinctQuickPicks.size },
-                    maxItemWidth = heroMaxWidth,
+                    preferredItemWidth = heroMaxWidth,
                     itemSpacing = 10.dp,
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     modifier =
@@ -565,7 +565,7 @@ fun RemoteQuickPicksSection(
 
                 HorizontalCenteredHeroCarousel(
                     state = rememberCarouselState { songs.size },
-                    maxItemWidth = heroMaxWidth,
+                    preferredItemWidth = heroMaxWidth,
                     itemSpacing = 10.dp,
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     modifier =

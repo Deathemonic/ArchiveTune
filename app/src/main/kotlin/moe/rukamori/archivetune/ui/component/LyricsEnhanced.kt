@@ -91,6 +91,7 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
+import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.LyricsAnchor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import moe.rukamori.archivetune.LocalAnimationsDisabled
@@ -499,7 +500,7 @@ fun LyricsEnhanced(
                 BoxWithConstraints(
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    val lyricsViewportOffset = remember(maxHeight) { maxHeight * 0.38f }
+                    val lyricsViewportAnchor = remember(maxHeight) { LyricsAnchor.Fixed(maxHeight * 0.38f) }
 
                     CompositionLocalProvider(LocalLayoutDirection provides lyricsLayoutDirection) {
                         key(lyricsSessionKey, syncedLyrics) {
@@ -533,7 +534,7 @@ fun LyricsEnhanced(
                                 useBlurEffect = lyricsLineBlur,
                                 showTranslation = showTranslations,
                                 showPhonetic = showPhonetics,
-                                offset = lyricsViewportOffset,
+                                anchor = lyricsViewportAnchor,
                                 keepAliveZone = 72.dp,
                                 modifier = Modifier.fillMaxSize(),
                             )

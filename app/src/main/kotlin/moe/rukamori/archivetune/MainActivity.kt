@@ -1133,6 +1133,7 @@ class MainActivity : ComponentActivity() {
                             expandedBound = maxHeight,
                         )
                     var homeOverflowMenuExpanded by rememberSaveable { mutableStateOf(false) }
+                    var homeTopAppBarOverflowExpanded by rememberSaveable { mutableStateOf(false) }
                     val showHomeOverflowFab =
                         shouldShowHomeShuffleButton &&
                             !useRail &&
@@ -1141,6 +1142,11 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(showHomeOverflowFab) {
                         if (!showHomeOverflowFab) {
                             homeOverflowMenuExpanded = false
+                        }
+                    }
+                    LaunchedEffect(currentRoute) {
+                        if (currentRoute != Screens.Home.route) {
+                            homeTopAppBarOverflowExpanded = false
                         }
                     }
 
@@ -1897,98 +1903,197 @@ class MainActivity : ComponentActivity() {
                                                     }
                                                 },
                                                 actions = {
-                                                    TranslucentTopAppBarIconButton(
-                                                        onClick = { navController.navigate("history") },
-                                                    ) {
-                                                        Icon(
-                                                            painter = painterResource(R.drawable.history),
-                                                            contentDescription = stringResource(R.string.history),
-                                                        )
-                                                    }
-                                                    val newsTooltipState = rememberTooltipState()
-                                                    val newsLifecycleOwner = LocalLifecycleOwner.current
-                                                    LaunchedEffect(latestUnreadNewsTimestamp, newsLifecycleOwner, newsTooltipState) {
-                                                        val timestamp = latestUnreadNewsTimestamp
-                                                        if (timestamp == null) {
-                                                            newsTooltipState.dismiss()
-                                                            return@LaunchedEffect
-                                                        }
-                                                        newsLifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                                                            if (newsViewModel.claimUnreadNewsTooltip(timestamp)) {
-                                                                try {
-                                                                    newsTooltipState.show()
-                                                                } finally {
-                                                                    newsTooltipState.dismiss()
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    TooltipBox(
-                                                        positionProvider =
-                                                            if (hasUnreadNews) {
-                                                                TooltipDefaults.rememberRichTooltipPositionProvider()
-                                                            } else {
-                                                                TooltipDefaults.rememberPlainTooltipPositionProvider()
-                                                            },
-                                                        tooltip = {
-                                                            if (hasUnreadNews) {
-                                                                RichTooltip(
-                                                                    title = { Text(stringResource(R.string.news_tooltip_title)) },
-                                                                ) {
-                                                                    Text(stringResource(R.string.news_tooltip_body))
-                                                                }
-                                                            } else {
-                                                                PlainTooltip {
-                                                                    Text(stringResource(R.string.news))
-                                                                }
-                                                            }
-                                                        },
-                                                        state = newsTooltipState,
-                                                    ) {
-                                                        TranslucentTopAppBarIconButton(
-                                                            onClick = {
+                                                    val hasUpdateAvailable =
+                                                        BuildConfig.UPDATER_AVAILABLE &&
+                                                            latestUpdateChannel == updateChannel &&
+                                                            latestUpdateChannel != UpdateChannel.ARTIFACT &&
+                                                            Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
+                                                    if (currentRoute == Screens.Home.route) {
+                                                        val newsTooltipState = rememberTooltipState()
+                                                        val newsLifecycleOwner = LocalLifecycleOwner.current
+                                                        LaunchedEffect(
+                                                            latestUnreadNewsTimestamp,
+                                                            newsLifecycleOwner,
+                                                            newsTooltipState,
+                                                        ) {
+                                                            val timestamp = latestUnreadNewsTimestamp
+                                                            if (timestamp == null) {
                                                                 newsTooltipState.dismiss()
-                                                                navController.navigate("news")
+                                                                return@LaunchedEffect
+                                                            }
+                                                            newsLifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                                                                if (newsViewModel.claimUnreadNewsTooltip(timestamp)) {
+                                                                    try {
+                                                                        newsTooltipState.show()
+                                                                    } finally {
+                                                                        newsTooltipState.dismiss()
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        TooltipBox(
+                                                            positionProvider =
+                                                                if (hasUnreadNews) {
+                                                                    TooltipDefaults.rememberRichTooltipPositionProvider()
+                                                                } else {
+                                                                    TooltipDefaults.rememberPlainTooltipPositionProvider()
+                                                                },
+                                                            tooltip = {
+                                                                if (hasUnreadNews) {
+                                                                    RichTooltip(
+                                                                        title = { Text(stringResource(R.string.news_tooltip_title)) },
+                                                                    ) {
+                                                                        Text(stringResource(R.string.news_tooltip_body))
+                                                                    }
+                                                                } else {
+                                                                    PlainTooltip {
+                                                                        Text(stringResource(R.string.more_options))
+                                                                    }
+                                                                }
                                                             },
+                                                            state = newsTooltipState,
+                                                        ) {
+                                                            Box {
+                                                                TranslucentTopAppBarIconButton(
+                                                                    onClick = {
+                                                                        newsTooltipState.dismiss()
+                                                                        homeTopAppBarOverflowExpanded =
+                                                                            !homeTopAppBarOverflowExpanded
+                                                                    },
+                                                                ) {
+                                                                    BadgedBox(badge = {
+                                                                        if (hasUnreadNews || hasUpdateAvailable) {
+                                                                            Badge()
+                                                                        }
+                                                                    }) {
+                                                                        Icon(
+                                                                            painter = painterResource(R.drawable.more_horiz),
+                                                                            contentDescription =
+                                                                                stringResource(R.string.more_options),
+                                                                        )
+                                                                    }
+                                                                }
+                                                                HomeTopAppBarOverflowMenu(
+                                                                    expanded = homeTopAppBarOverflowExpanded,
+                                                                    pureBlack = pureBlack,
+                                                                    hasUnreadNews = hasUnreadNews,
+                                                                    hasUpdateAvailable = hasUpdateAvailable,
+                                                                    onDismissRequest = {
+                                                                        homeTopAppBarOverflowExpanded = false
+                                                                    },
+                                                                    onHistoryClick = {
+                                                                        homeTopAppBarOverflowExpanded = false
+                                                                        navController.navigate("history")
+                                                                    },
+                                                                    onNewsClick = {
+                                                                        newsTooltipState.dismiss()
+                                                                        homeTopAppBarOverflowExpanded = false
+                                                                        navController.navigate("news")
+                                                                    },
+                                                                    onNewReleaseClick = {
+                                                                        homeTopAppBarOverflowExpanded = false
+                                                                        navController.navigate("new_release")
+                                                                    },
+                                                                    onSettingsClick = {
+                                                                        homeTopAppBarOverflowExpanded = false
+                                                                        navController.navigate("settings")
+                                                                    },
+                                                                )
+                                                            }
+                                                        }
+                                                    } else {
+                                                        TranslucentTopAppBarIconButton(
+                                                            onClick = { navController.navigate("history") },
+                                                        ) {
+                                                            Icon(
+                                                                painter = painterResource(R.drawable.history),
+                                                                contentDescription = stringResource(R.string.history),
+                                                            )
+                                                        }
+                                                        val newsTooltipState = rememberTooltipState()
+                                                        val newsLifecycleOwner = LocalLifecycleOwner.current
+                                                        LaunchedEffect(
+                                                            latestUnreadNewsTimestamp,
+                                                            newsLifecycleOwner,
+                                                            newsTooltipState,
+                                                        ) {
+                                                            val timestamp = latestUnreadNewsTimestamp
+                                                            if (timestamp == null) {
+                                                                newsTooltipState.dismiss()
+                                                                return@LaunchedEffect
+                                                            }
+                                                            newsLifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                                                                if (newsViewModel.claimUnreadNewsTooltip(timestamp)) {
+                                                                    try {
+                                                                        newsTooltipState.show()
+                                                                    } finally {
+                                                                        newsTooltipState.dismiss()
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        TooltipBox(
+                                                            positionProvider =
+                                                                if (hasUnreadNews) {
+                                                                    TooltipDefaults.rememberRichTooltipPositionProvider()
+                                                                } else {
+                                                                    TooltipDefaults.rememberPlainTooltipPositionProvider()
+                                                                },
+                                                            tooltip = {
+                                                                if (hasUnreadNews) {
+                                                                    RichTooltip(
+                                                                        title = { Text(stringResource(R.string.news_tooltip_title)) },
+                                                                    ) {
+                                                                        Text(stringResource(R.string.news_tooltip_body))
+                                                                    }
+                                                                } else {
+                                                                    PlainTooltip {
+                                                                        Text(stringResource(R.string.news))
+                                                                    }
+                                                                }
+                                                            },
+                                                            state = newsTooltipState,
+                                                        ) {
+                                                            TranslucentTopAppBarIconButton(
+                                                                onClick = {
+                                                                    newsTooltipState.dismiss()
+                                                                    navController.navigate("news")
+                                                                },
+                                                            ) {
+                                                                BadgedBox(badge = {
+                                                                    if (hasUnreadNews) {
+                                                                        Badge()
+                                                                    }
+                                                                }) {
+                                                                    Icon(
+                                                                        painter = painterResource(R.drawable.newspaper),
+                                                                        contentDescription = stringResource(R.string.news),
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                        TranslucentTopAppBarIconButton(
+                                                            onClick = { navController.navigate("new_release") },
+                                                        ) {
+                                                            Icon(
+                                                                painter = painterResource(R.drawable.new_release),
+                                                                contentDescription = stringResource(R.string.new_release_albums),
+                                                            )
+                                                        }
+                                                        TranslucentTopAppBarIconButton(
+                                                            onClick = { navController.navigate("settings") },
                                                         ) {
                                                             BadgedBox(badge = {
-                                                                if (hasUnreadNews) {
+                                                                if (hasUpdateAvailable) {
                                                                     Badge()
                                                                 }
                                                             }) {
                                                                 Icon(
-                                                                    painter = painterResource(R.drawable.newspaper),
-                                                                    contentDescription = stringResource(R.string.news),
+                                                                    painter = painterResource(R.drawable.settings),
+                                                                    contentDescription = stringResource(R.string.settings),
+                                                                    modifier = Modifier.size(24.dp),
                                                                 )
                                                             }
-                                                        }
-                                                    }
-                                                    TranslucentTopAppBarIconButton(
-                                                        onClick = { navController.navigate("new_release") },
-                                                    ) {
-                                                        Icon(
-                                                            painter = painterResource(R.drawable.new_release),
-                                                            contentDescription = stringResource(R.string.new_release_albums),
-                                                        )
-                                                    }
-                                                    TranslucentTopAppBarIconButton(
-                                                        onClick = { navController.navigate("settings") },
-                                                    ) {
-                                                        BadgedBox(badge = {
-                                                            if (
-                                                                BuildConfig.UPDATER_AVAILABLE &&
-                                                                latestUpdateChannel == updateChannel &&
-                                                                latestUpdateChannel != UpdateChannel.ARTIFACT &&
-                                                                Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
-                                                            ) {
-                                                                Badge()
-                                                            }
-                                                        }) {
-                                                            Icon(
-                                                                painter = painterResource(R.drawable.settings),
-                                                                contentDescription = stringResource(R.string.settings),
-                                                                modifier = Modifier.size(24.dp),
-                                                            )
                                                         }
                                                     }
                                                 },
@@ -3206,6 +3311,99 @@ private fun HomeOverflowFab(
                 colors = menuItemColors,
             )
         }
+    }
+}
+
+@Composable
+private fun HomeTopAppBarOverflowMenu(
+    expanded: Boolean,
+    pureBlack: Boolean,
+    hasUnreadNews: Boolean,
+    hasUpdateAvailable: Boolean,
+    onDismissRequest: () -> Unit,
+    onHistoryClick: () -> Unit,
+    onNewsClick: () -> Unit,
+    onNewReleaseClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+) {
+    val itemColors =
+        MenuDefaults.itemColors(
+            textColor = if (pureBlack) Color.White else MaterialTheme.colorScheme.onSurface,
+            leadingIconColor =
+                if (pureBlack) {
+                    Color.White.copy(alpha = 0.82f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+        )
+
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        shape = RoundedCornerShape(24.dp),
+        containerColor = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 6.dp,
+    ) {
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.history)) },
+            onClick = onHistoryClick,
+            leadingIcon = {
+                HomeOverflowMenuIcon(
+                    iconRes = R.drawable.history,
+                    contentDescription = null,
+                    pureBlack = pureBlack,
+                )
+            },
+            colors = itemColors,
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.news)) },
+            onClick = onNewsClick,
+            leadingIcon = {
+                BadgedBox(badge = {
+                    if (hasUnreadNews) {
+                        Badge()
+                    }
+                }) {
+                    HomeOverflowMenuIcon(
+                        iconRes = R.drawable.newspaper,
+                        contentDescription = null,
+                        pureBlack = pureBlack,
+                    )
+                }
+            },
+            colors = itemColors,
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.new_release_albums)) },
+            onClick = onNewReleaseClick,
+            leadingIcon = {
+                HomeOverflowMenuIcon(
+                    iconRes = R.drawable.new_release,
+                    contentDescription = null,
+                    pureBlack = pureBlack,
+                )
+            },
+            colors = itemColors,
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.settings)) },
+            onClick = onSettingsClick,
+            leadingIcon = {
+                BadgedBox(badge = {
+                    if (hasUpdateAvailable) {
+                        Badge()
+                    }
+                }) {
+                    HomeOverflowMenuIcon(
+                        iconRes = R.drawable.settings,
+                        contentDescription = null,
+                        pureBlack = pureBlack,
+                    )
+                }
+            },
+            colors = itemColors,
+        )
     }
 }
 

@@ -41,6 +41,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ContainedLoadingIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
@@ -106,6 +108,8 @@ import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.viewmodels.DownloadLibraryEvent
 import moe.rukamori.archivetune.viewmodels.DownloadRemovalConfirmation
 import moe.rukamori.archivetune.viewmodels.DownloadLibraryScreenState
+import moe.rukamori.archivetune.viewmodels.DownloadLibrarySortField
+import moe.rukamori.archivetune.viewmodels.DownloadLibrarySortOrder
 import moe.rukamori.archivetune.viewmodels.DownloadLibraryTab
 import moe.rukamori.archivetune.viewmodels.DownloadLibraryViewModel
 
@@ -153,6 +157,8 @@ fun DownloadLibraryScreen(
         onQueryChange = viewModel::updateQuery,
         onClearQuery = viewModel::clearQuery,
         onTabSelected = viewModel::selectTab,
+        onSortFieldSelected = viewModel::selectSortField,
+        onSortOrderSelected = viewModel::selectSortOrder,
         onOpenEntry = viewModel::open,
         onPauseEntry = viewModel::pause,
         onResumeEntry = viewModel::resume,
@@ -179,6 +185,8 @@ private fun DownloadLibraryScreenContent(
     onQueryChange: (String) -> Unit,
     onClearQuery: () -> Unit,
     onTabSelected: (DownloadLibraryTab) -> Unit,
+    onSortFieldSelected: (DownloadLibrarySortField) -> Unit,
+    onSortOrderSelected: (DownloadLibrarySortOrder) -> Unit,
     onOpenEntry: (DownloadEntryUiModel) -> Unit,
     onPauseEntry: (DownloadEntryUiModel) -> Unit,
     onResumeEntry: (DownloadEntryUiModel) -> Unit,
@@ -194,6 +202,7 @@ private fun DownloadLibraryScreenContent(
     val selectedTab = state.selectedTab()
     val query = state.query()
     val isSearchActive = state.isSearchActive()
+    val sort = state.sort
     val tabs = remember { DownloadLibraryTab.entries }
     val pagerState = rememberPagerState(initialPage = tabs.indexOf(selectedTab), pageCount = { tabs.size })
     val scope = rememberCoroutineScope()
@@ -287,6 +296,12 @@ private fun DownloadLibraryScreenContent(
                                 }
                             },
                             actions = {
+                                DownloadSortMenu(
+                                    sortField = sort.field,
+                                    sortOrder = sort.order,
+                                    onSortFieldSelected = onSortFieldSelected,
+                                    onSortOrderSelected = onSortOrderSelected,
+                                )
                                 IconButton(onClick = onActivateSearch) {
                                     Icon(
                                         painter = painterResource(R.drawable.search),
@@ -388,6 +403,149 @@ private fun DownloadLibraryScreenContent(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun DownloadSortMenu(
+    sortField: DownloadLibrarySortField,
+    sortOrder: DownloadLibrarySortOrder,
+    onSortFieldSelected: (DownloadLibrarySortField) -> Unit,
+    onSortOrderSelected: (DownloadLibrarySortOrder) -> Unit,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    var sortOrderMenuExpanded by remember { mutableStateOf(false) }
+
+    Box {
+        IconButton(onClick = { menuExpanded = true }) {
+            Icon(
+                painter = painterResource(R.drawable.tune),
+                contentDescription = stringResource(R.string.sort_by_name),
+            )
+        }
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = {
+                menuExpanded = false
+                sortOrderMenuExpanded = false
+            },
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.sort_by_name)) },
+                leadingIcon = {
+                    Icon(painterResource(R.drawable.sort_by_alpha), contentDescription = null)
+                },
+                trailingIcon = {
+                    Icon(
+                        painterResource(
+                            if (sortField == DownloadLibrarySortField.NAME) {
+                                R.drawable.radio_button_checked
+                            } else {
+                                R.drawable.radio_button_unchecked
+                            },
+                        ),
+                        contentDescription = null,
+                    )
+                },
+                onClick = { onSortFieldSelected(DownloadLibrarySortField.NAME) },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.sort_by_last_updated)) },
+                leadingIcon = {
+                    Icon(painterResource(R.drawable.calendar_today), contentDescription = null)
+                },
+                trailingIcon = {
+                    Icon(
+                        painterResource(
+                            if (sortField == DownloadLibrarySortField.DATE_MODIFIED) {
+                                R.drawable.radio_button_checked
+                            } else {
+                                R.drawable.radio_button_unchecked
+                            },
+                        ),
+                        contentDescription = null,
+                    )
+                },
+                onClick = { onSortFieldSelected(DownloadLibrarySortField.DATE_MODIFIED) },
+            )
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        stringResource(
+                            if (sortOrder == DownloadLibrarySortOrder.ASCENDING) {
+                                R.string.sort_order_ascending
+                            } else {
+                                R.string.sort_order_descending
+                            },
+                        ),
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        painterResource(
+                            if (sortOrder == DownloadLibrarySortOrder.ASCENDING) {
+                                R.drawable.arrow_upward
+                            } else {
+                                R.drawable.arrow_downward
+                            },
+                        ),
+                        contentDescription = null,
+                    )
+                },
+                trailingIcon = {
+                    Icon(painterResource(R.drawable.arrow_forward), contentDescription = null)
+                },
+                onClick = { sortOrderMenuExpanded = true },
+            )
+        }
+        DropdownMenu(
+            expanded = menuExpanded && sortOrderMenuExpanded,
+            onDismissRequest = { sortOrderMenuExpanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.sort_order_ascending)) },
+                leadingIcon = { Icon(painterResource(R.drawable.arrow_upward), contentDescription = null) },
+                trailingIcon = {
+                    Icon(
+                        painterResource(
+                            if (sortOrder == DownloadLibrarySortOrder.ASCENDING) {
+                                R.drawable.radio_button_checked
+                            } else {
+                                R.drawable.radio_button_unchecked
+                            },
+                        ),
+                        contentDescription = null,
+                    )
+                },
+                onClick = {
+                    onSortOrderSelected(DownloadLibrarySortOrder.ASCENDING)
+                    menuExpanded = false
+                    sortOrderMenuExpanded = false
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.sort_order_descending)) },
+                leadingIcon = { Icon(painterResource(R.drawable.arrow_downward), contentDescription = null) },
+                trailingIcon = {
+                    Icon(
+                        painterResource(
+                            if (sortOrder == DownloadLibrarySortOrder.DESCENDING) {
+                                R.drawable.radio_button_checked
+                            } else {
+                                R.drawable.radio_button_unchecked
+                            },
+                        ),
+                        contentDescription = null,
+                    )
+                },
+                onClick = {
+                    onSortOrderSelected(DownloadLibrarySortOrder.DESCENDING)
+                    menuExpanded = false
+                    sortOrderMenuExpanded = false
+                },
+            )
+        }
     }
 }
 

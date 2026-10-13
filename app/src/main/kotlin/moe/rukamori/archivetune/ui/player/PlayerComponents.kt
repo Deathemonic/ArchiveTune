@@ -141,7 +141,6 @@ import androidx.media3.common.Player.STATE_ENDED
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
-import me.saket.squiggles.SquigglySlider
 import moe.rukamori.archivetune.canvas.CanvasSource
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
@@ -802,18 +801,28 @@ fun StyledPlaybackSlider(
         }
 
         SliderStyle.Wavy -> {
-            SquigglySlider(
-                value = value,
-                valueRange = valueRange,
-                onValueChange = onValueChange,
+            val sliderState =
+                rememberControlledSliderState(
+                    value = value,
+                    valueRange = valueRange,
+                )
+            Slider(
+                state = sliderState,
+                onValueChange = { updated ->
+                    sliderState.value = updated
+                    onValueChange(updated)
+                },
                 onValueChangeFinished = onValueChangeFinished,
                 colors = PlayerSliderColors.wavySliderColors(activeColor),
+                thumb = { Spacer(modifier = Modifier.size(0.dp)) },
+                track = { sliderState ->
+                    PlayerSliderTrack(
+                        sliderState = sliderState,
+                        colors = PlayerSliderColors.wavySliderColors(activeColor),
+                        trackHeight = if (isPlaying) 6.dp else 3.dp,
+                    )
+                },
                 modifier = modifier,
-                squigglesSpec =
-                    SquigglySlider.SquigglesSpec(
-                        amplitude = if (isPlaying) 2.dp else 0.dp,
-                        strokeWidth = 6.dp,
-                    ),
             )
         }
 
@@ -844,18 +853,20 @@ fun StyledPlaybackSlider(
         }
 
         SliderStyle.Circular -> {
-            SquigglySlider(
-                value = value,
-                valueRange = valueRange,
-                onValueChange = onValueChange,
+            val sliderState =
+                rememberControlledSliderState(
+                    value = value,
+                    valueRange = valueRange,
+                )
+            Slider(
+                state = sliderState,
+                onValueChange = { updated ->
+                    sliderState.value = updated
+                    onValueChange(updated)
+                },
                 onValueChangeFinished = onValueChangeFinished,
                 colors = PlayerSliderColors.circularSliderColors(activeColor),
                 modifier = modifier,
-                squigglesSpec =
-                    SquigglySlider.SquigglesSpec(
-                        amplitude = if (isPlaying) 2.dp else 0.dp,
-                        strokeWidth = 6.dp,
-                    ),
             )
         }
 

@@ -372,7 +372,6 @@ dependencies {
     add("gmsImplementation", libs.media3.cast)
     add("gmsImplementation", libs.mediarouter)
     add("gmsImplementation", "com.google.android.gms:play-services-auth:22.0.0")
-    implementation(libs.squigglyslider)
 
 
     implementation(libs.room.runtime)

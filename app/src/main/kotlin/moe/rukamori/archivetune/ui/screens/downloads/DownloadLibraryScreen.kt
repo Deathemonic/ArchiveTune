@@ -433,7 +433,7 @@ private fun DownloadSortMenu(
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.sort_by_name)) },
                 leadingIcon = {
-                    Icon(painterResource(R.drawable.sort_by_alpha), contentDescription = null)
+                    Icon(painterResource(R.drawable.tune), contentDescription = null)
                 },
                 trailingIcon = {
                     Icon(

@@ -43,6 +43,7 @@ import android.os.PowerManager
 import android.util.LruCache
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
 import androidx.datastore.preferences.core.Preferences
@@ -1037,8 +1038,13 @@ class MusicService :
         }
     }
 
-    private fun promoteToStartedService() {
-        runCatching { startService(Intent(this, MusicService::class.java)) }
+    private fun promoteToStartedForegroundService() {
+        runCatching {
+            ContextCompat.startForegroundService(
+                this,
+                Intent(this, MusicService::class.java),
+            )
+        }
             .onFailure { reportException(it) }
     }
 
@@ -1072,7 +1078,7 @@ class MusicService :
         if (hasBoundClients) return
         if (hasResumablePlaybackNotification()) {
             cancelIdleStop()
-            promoteToStartedService()
+            promoteToStartedForegroundService()
             ensureStartedAsForeground()
             return
         }
@@ -4053,7 +4059,7 @@ class MusicService :
         }
         if (playWhenReady) {
             cancelIdleStop()
-            promoteToStartedService()
+            promoteToStartedForegroundService()
             ensureStartedAsForeground()
         }
         cancelRestoredQueueHydration()
@@ -7091,7 +7097,7 @@ class MusicService :
             updateWakeLock()
             if (hasResumablePlaybackNotification()) {
                 cancelIdleStop()
-                promoteToStartedService()
+                promoteToStartedForegroundService()
                 ensureStartedAsForeground()
             } else {
                 scheduleStopIfIdle()

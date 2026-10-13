@@ -2503,7 +2503,7 @@ class MainActivity : ComponentActivity() {
                                         ) {
                                             fadeIn(tween(250))
                                         } else {
-                                            fadeIn(tween(250)) + slideInHorizontally { it / 2 }
+                                            fadeIn(tween(250)) + slideInHorizontally(animationSpec = tween(250)) { it }
                                         }
                                     },
                                     exitTransition = {
@@ -2514,7 +2514,7 @@ class MainActivity : ComponentActivity() {
                                         ) {
                                             fadeOut(tween(200))
                                         } else {
-                                            fadeOut(tween(200)) + slideOutHorizontally { -it / 2 }
+                                            fadeOut(tween(200)) + slideOutHorizontally(animationSpec = tween(200)) { -it }
                                         }
                                     },
                                     popEnterTransition = {
@@ -2528,7 +2528,7 @@ class MainActivity : ComponentActivity() {
                                         ) {
                                             fadeIn(tween(250))
                                         } else {
-                                            fadeIn(tween(250)) + slideInHorizontally { -it / 2 }
+                                            slideInHorizontally(animationSpec = tween(250)) { -it }
                                         }
                                     },
                                     popExitTransition = {
@@ -2542,7 +2542,7 @@ class MainActivity : ComponentActivity() {
                                         ) {
                                             fadeOut(tween(200))
                                         } else {
-                                            fadeOut(tween(200)) + slideOutHorizontally { it / 2 }
+                                            slideOutHorizontally(animationSpec = tween(200)) { it }
                                         }
                                     },
                                     modifier =

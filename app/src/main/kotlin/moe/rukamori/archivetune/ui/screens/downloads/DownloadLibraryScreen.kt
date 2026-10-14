@@ -432,9 +432,6 @@ private fun DownloadSortMenu(
         ) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.sort_by_name)) },
-                leadingIcon = {
-                    Icon(painterResource(R.drawable.tune), contentDescription = null)
-                },
                 trailingIcon = {
                     Icon(
                         painterResource(
@@ -479,18 +476,6 @@ private fun DownloadSortMenu(
                                 R.string.sort_order_descending
                             },
                         ),
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        painterResource(
-                            if (sortOrder == DownloadLibrarySortOrder.ASCENDING) {
-                                R.drawable.arrow_upward
-                            } else {
-                                R.drawable.arrow_downward
-                            },
-                        ),
-                        contentDescription = null,
                     )
                 },
                 trailingIcon = {

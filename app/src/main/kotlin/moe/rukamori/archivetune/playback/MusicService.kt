@@ -43,7 +43,6 @@ import android.os.PowerManager
 import android.util.LruCache
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
 import androidx.datastore.preferences.core.Preferences
@@ -367,8 +366,11 @@ class MusicService :
     private var scope = CoroutineScope(Dispatchers.Main + scopeJob)
     private var ioScope = CoroutineScope(Dispatchers.IO + scopeJob)
     private val binder = MusicBinder(this)
-    private var hasBoundClients = false
+    private var boundClientCount = 0
+    private val hasBoundClients: Boolean
+        get() = boundClientCount > 0
     private var idleStopJob: Job? = null
+    private lateinit var mediaNotificationProvider: ArchiveTuneMediaNotificationProvider
 
     private lateinit var connectivityManager: ConnectivityManager
     lateinit var connectivityObserver: NetworkConnectivityObserver
@@ -769,9 +771,6 @@ class MusicService :
 
     val maxSafeGainFactor = MAX_AUDIO_NORMALIZATION_FACTOR
 
-    @Volatile
-    private var hasCalledStartForeground = false
-
     val togetherSessionState =
         MutableStateFlow<moe.rukamori.archivetune.together.TogetherSessionState>(
             moe.rukamori.archivetune.together.TogetherSessionState.Idle,
@@ -993,59 +992,52 @@ class MusicService :
         return generated
     }
 
-    private fun ensureStartedAsForeground() {
-        if (hasCalledStartForeground) return
+    private fun buildStartupNotification(): Notification {
+        val contentIntent =
+            PendingIntent.getActivity(
+                this,
+                0,
+                Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
 
+        return NotificationCompat
+            .Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.small_icon)
+            .setContentTitle(getString(R.string.music_player))
+            .setContentText(getString(R.string.app_name))
+            .setContentIntent(contentIntent)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
+    }
+
+    private fun enterForegroundForStartCommand() {
+        val mediaNotification =
+            if (hasResumablePlaybackNotification()) mediaNotificationProvider.latestNotification else null
+        val notificationId = mediaNotification?.notificationId ?: NOTIFICATION_ID
         val notification =
-            try {
-                val contentIntent =
-                    PendingIntent.getActivity(
-                        this,
-                        0,
-                        Intent(this, MainActivity::class.java),
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                    )
-
-                NotificationCompat
-                    .Builder(this, CHANNEL_ID)
-                    .setSmallIcon(R.drawable.small_icon)
-                    .setContentTitle(getString(R.string.music_player))
-                    .setContentText(getString(R.string.app_name))
-                    .setContentIntent(contentIntent)
-                    .setCategory(Notification.CATEGORY_SERVICE)
-                    .setPriority(NotificationCompat.PRIORITY_LOW)
-                    .setOngoing(true)
-                    .setOnlyAlertOnce(true)
-                    .build()
-            } catch (e: Exception) {
-                reportException(e)
-                return
-            }
+            mediaNotification?.notification
+                ?: runCatching { buildStartupNotification() }
+                    .onFailure { reportException(it) }
+                    .getOrNull()
+                ?: return
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
-                    NOTIFICATION_ID,
+                    notificationId,
                     notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
                 )
             } else {
-                startForeground(NOTIFICATION_ID, notification)
+                startForeground(notificationId, notification)
             }
-            hasCalledStartForeground = true
         } catch (e: Exception) {
             reportException(e)
         }
-    }
-
-    private fun promoteToStartedForegroundService() {
-        runCatching {
-            ContextCompat.startForegroundService(
-                this,
-                Intent(this, MusicService::class.java),
-            )
-        }
-            .onFailure { reportException(it) }
     }
 
     private fun cancelIdleStop() {
@@ -1070,7 +1062,7 @@ class MusicService :
                 stopForeground(true)
             }
         }
-        hasCalledStartForeground = false
+        mediaNotificationProvider.clearLatestNotification()
         stopSelf()
     }
 
@@ -1078,8 +1070,6 @@ class MusicService :
         if (hasBoundClients) return
         if (hasResumablePlaybackNotification()) {
             cancelIdleStop()
-            promoteToStartedForegroundService()
-            ensureStartedAsForeground()
             return
         }
         val togetherIdle = togetherSessionState.value is moe.rukamori.archivetune.together.TogetherSessionState.Idle
@@ -1248,12 +1238,12 @@ class MusicService :
                 )
         }
         mediaSession = mediaSessionBuilder.build()
-        setMediaNotificationProvider(
+        mediaNotificationProvider =
             ArchiveTuneMediaNotificationProvider(
                 context = this,
                 smallIconResId = R.drawable.small_icon,
-            ),
-        )
+            )
+        setMediaNotificationProvider(mediaNotificationProvider)
         addSession(mediaSession)
 
         updateNotification()
@@ -4059,8 +4049,6 @@ class MusicService :
         }
         if (playWhenReady) {
             cancelIdleStop()
-            promoteToStartedForegroundService()
-            ensureStartedAsForeground()
         }
         cancelRestoredQueueHydration()
         ensureScopesActive()
@@ -7097,8 +7085,6 @@ class MusicService :
             updateWakeLock()
             if (hasResumablePlaybackNotification()) {
                 cancelIdleStop()
-                promoteToStartedForegroundService()
-                ensureStartedAsForeground()
             } else {
                 scheduleStopIfIdle()
             }
@@ -8427,7 +8413,7 @@ class MusicService :
     }
 
     override fun onBind(intent: Intent?): android.os.IBinder? {
-        hasBoundClients = true
+        boundClientCount++
         cancelIdleStop()
         val result = super.onBind(intent) ?: binder
         if (player.mediaItemCount > 0 && player.currentMediaItem != null) {
@@ -8441,13 +8427,13 @@ class MusicService :
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
-        hasBoundClients = false
+        boundClientCount = (boundClientCount - 1).coerceAtLeast(0)
         scheduleStopIfIdle()
         return super.onUnbind(intent)
     }
 
     override fun onRebind(intent: Intent?) {
-        hasBoundClients = true
+        boundClientCount++
         cancelIdleStop()
         super.onRebind(intent)
     }
@@ -8544,7 +8530,10 @@ class MusicService :
             return START_NOT_STICKY
         }
 
-        ensureStartedAsForeground()
+        enterForegroundForStartCommand()
+        if (!hasResumablePlaybackNotification()) {
+            scheduleStopIfIdle()
+        }
         when (intent?.action) {
             "moe.rukamori.archivetune.WIDGET_PLAY_PAUSE" -> {
                 if (player.isPlaying) player.pause() else player.play()
@@ -8581,7 +8570,6 @@ class MusicService :
             )
         if (!shouldShowNotification) return
 
-        ensureStartedAsForeground()
         runCatching { super.onUpdateNotification(session, true) }
             .onFailure { reportException(it) }
     }

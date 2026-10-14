@@ -3924,11 +3924,6 @@ class MusicService :
                 }
             }
 
-    fun refreshPlaybackNotification() {
-        updateNotification()
-        onUpdateNotification(mediaSession, hasResumablePlaybackNotification())
-    }
-
     private suspend fun recoverSong(
         mediaId: String,
         playbackData: YTPlayerUtils.PlaybackData? = null,
@@ -8559,21 +8554,6 @@ class MusicService :
         return START_NOT_STICKY
     }
 
-    override fun onUpdateNotification(
-        session: MediaSession,
-        startInForegroundRequired: Boolean,
-    ) {
-        val shouldShowNotification =
-            shouldShowPlaybackNotification(
-                startInForegroundRequired = startInForegroundRequired,
-                hasResumablePlayback = hasResumablePlaybackNotification(),
-            )
-        if (!shouldShowNotification) return
-
-        runCatching { super.onUpdateNotification(session, true) }
-            .onFailure { reportException(it) }
-    }
-
     // ── Widget Support ────────────────────────────────────────────────────────────
 
     fun updateWidget() {
@@ -8599,11 +8579,6 @@ class MusicService :
             isHostSessionActive: Boolean,
             isPlaybackInactive: Boolean,
         ): Boolean = (isHostSessionActive && isPlaybackInactive) || stopMusicOnTaskClearEnabled
-
-        internal fun shouldShowPlaybackNotification(
-            startInForegroundRequired: Boolean,
-            hasResumablePlayback: Boolean,
-        ): Boolean = startInForegroundRequired || hasResumablePlayback
 
         const val ROOT = "root"
         const val HOME = "home"

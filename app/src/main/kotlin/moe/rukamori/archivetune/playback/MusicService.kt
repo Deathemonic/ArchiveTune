@@ -369,6 +369,7 @@ class MusicService :
     private var boundClientCount = 0
     private val hasBoundClients: Boolean
         get() = boundClientCount > 0
+    private var isPlaybackServiceStarted = false
     private var idleStopJob: Job? = null
     private lateinit var mediaNotificationProvider: ArchiveTuneMediaNotificationProvider
 
@@ -1040,6 +1041,19 @@ class MusicService :
         }
     }
 
+    private fun ensureForegroundPlaybackService() {
+        if (!isPlaybackServiceStarted) {
+            try {
+                isPlaybackServiceStarted =
+                    startService(Intent(this, MusicService::class.java)) != null
+            } catch (exception: Exception) {
+                reportException(exception)
+                return
+            }
+        }
+        enterForegroundForStartCommand()
+    }
+
     private fun cancelIdleStop() {
         idleStopJob?.cancel()
         idleStopJob = null
@@ -1055,6 +1069,7 @@ class MusicService :
 
     private fun stopForegroundAndSelf() {
         cancelIdleStop()
+        isPlaybackServiceStarted = false
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -4044,6 +4059,7 @@ class MusicService :
         }
         if (playWhenReady) {
             cancelIdleStop()
+            ensureForegroundPlaybackService()
         }
         cancelRestoredQueueHydration()
         ensureScopesActive()
@@ -7078,6 +7094,9 @@ class MusicService :
                 ensureAudioFocusForActivePlayback()
             }
             updateWakeLock()
+            if (player.playWhenReady) {
+                ensureForegroundPlaybackService()
+            }
             if (hasResumablePlaybackNotification()) {
                 cancelIdleStop()
             } else {
@@ -8520,6 +8539,7 @@ class MusicService :
         flags: Int,
         startId: Int,
     ): Int {
+        isPlaybackServiceStarted = true
         if (intent?.action == ACTION_MEDIA_NOTIFICATION_DISMISSED) {
             handleMediaNotificationDismissed(intent)
             return START_NOT_STICKY

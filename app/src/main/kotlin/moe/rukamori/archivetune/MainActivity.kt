@@ -180,6 +180,8 @@ import coil3.request.allowHardware
 import coil3.toBitmap
 import com.valentinilk.shimmer.LocalShimmerTheme
 import dagger.hilt.android.AndroidEntryPoint
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -272,6 +274,7 @@ import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.component.MarkdownText
 import moe.rukamori.archivetune.ui.component.NetworkStatusBanner
 import moe.rukamori.archivetune.ui.component.StarDialog
+import moe.rukamori.archivetune.ui.component.TopAppBarOverflowMenu
 import moe.rukamori.archivetune.ui.component.TopSearch
 import moe.rukamori.archivetune.ui.component.TvNavigationRail
 import moe.rukamori.archivetune.ui.component.rememberBottomSheetState
@@ -316,6 +319,7 @@ import moe.rukamori.archivetune.viewmodels.BackupCategory
 import moe.rukamori.archivetune.viewmodels.BackupRestoreViewModel
 import moe.rukamori.archivetune.viewmodels.GatekeeperViewModel
 import moe.rukamori.archivetune.viewmodels.HomeViewModel
+import moe.rukamori.archivetune.viewmodels.MainMenuViewModel
 import moe.rukamori.archivetune.viewmodels.NetworkBannerViewModel
 import moe.rukamori.archivetune.viewmodels.NewsViewModel
 import moe.rukamori.archivetune.viewmodels.OnlineSearchSort
@@ -990,6 +994,19 @@ class MainActivity : ComponentActivity() {
                     val homeViewModel: HomeViewModel = hiltViewModel()
                     val networkBannerViewModel: NetworkBannerViewModel = hiltViewModel()
                     val newsViewModel: NewsViewModel = hiltViewModel()
+                    val mainMenuViewModel: MainMenuViewModel = hiltViewModel()
+                    val topAppBarOverflowExpanded by mainMenuViewModel.expanded.collectAsStateWithLifecycle()
+                    val menuProfileState by mainMenuViewModel.profileState.collectAsStateWithLifecycle()
+                    val menuAccountImageUrl by homeViewModel.accountImageUrl.collectAsStateWithLifecycle()
+                    val menuHazeState = rememberHazeState()
+                    val menuLifecycleOwner = LocalLifecycleOwner.current
+                    LaunchedEffect(mainMenuViewModel, navController, menuLifecycleOwner) {
+                        menuLifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                            mainMenuViewModel.destinations.collect { destination ->
+                                navController.navigate(destination.route) { launchSingleTop = true }
+                            }
+                        }
+                    }
                     val allLocalItems by homeViewModel.allLocalItems.collectAsState()
                     val allYtItems by homeViewModel.allYtItems.collectAsState()
                     val networkBannerState by networkBannerViewModel.bannerState.collectAsStateWithLifecycle()
@@ -1133,7 +1150,6 @@ class MainActivity : ComponentActivity() {
                             expandedBound = maxHeight,
                         )
                     var homeOverflowMenuExpanded by rememberSaveable { mutableStateOf(false) }
-                    var topAppBarOverflowExpanded by rememberSaveable { mutableStateOf(false) }
                     val showHomeOverflowFab =
                         shouldShowHomeShuffleButton &&
                             !useRail &&
@@ -1145,7 +1161,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     LaunchedEffect(currentRoute) {
-                        topAppBarOverflowExpanded = false
+                        mainMenuViewModel.dismiss()
                     }
 
                     val playerBackground by rememberEnumPreference(
@@ -1954,8 +1970,7 @@ class MainActivity : ComponentActivity() {
                                                             TranslucentTopAppBarIconButton(
                                                                 onClick = {
                                                                     newsTooltipState.dismiss()
-                                                                    topAppBarOverflowExpanded =
-                                                                        !topAppBarOverflowExpanded
+                                                                    mainMenuViewModel.toggle()
                                                                 },
                                                             ) {
                                                                 BadgedBox(badge = {
@@ -1972,28 +1987,16 @@ class MainActivity : ComponentActivity() {
                                                             }
                                                             TopAppBarOverflowMenu(
                                                                 expanded = topAppBarOverflowExpanded,
+                                                                profileState = menuProfileState,
+                                                                accountImageUrl = menuAccountImageUrl,
+                                                                hazeState = menuHazeState,
                                                                 pureBlack = pureBlack,
                                                                 hasUnreadNews = hasUnreadNews,
                                                                 hasUpdateAvailable = hasUpdateAvailable,
-                                                                onDismissRequest = {
-                                                                    topAppBarOverflowExpanded = false
-                                                                },
-                                                                onHistoryClick = {
-                                                                    topAppBarOverflowExpanded = false
-                                                                    navController.navigate("history")
-                                                                },
-                                                                onNewsClick = {
+                                                                onDismissRequest = mainMenuViewModel::dismiss,
+                                                                onSelect = { destination ->
                                                                     newsTooltipState.dismiss()
-                                                                    topAppBarOverflowExpanded = false
-                                                                    navController.navigate("news")
-                                                                },
-                                                                onNewReleaseClick = {
-                                                                    topAppBarOverflowExpanded = false
-                                                                    navController.navigate("new_release")
-                                                                },
-                                                                onSettingsClick = {
-                                                                    topAppBarOverflowExpanded = false
-                                                                    navController.navigate("settings")
+                                                                    mainMenuViewModel.select(destination)
                                                                 },
                                                             )
                                                         }
@@ -2454,7 +2457,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 },
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier.fillMaxSize().hazeSource(menuHazeState),
                             ) {
                                 var transitionDirection =
                                     AnimatedContentTransitionScope.SlideDirection.Left
@@ -3213,99 +3216,6 @@ private fun HomeOverflowFab(
                 colors = menuItemColors,
             )
         }
-    }
-}
-
-@Composable
-private fun TopAppBarOverflowMenu(
-    expanded: Boolean,
-    pureBlack: Boolean,
-    hasUnreadNews: Boolean,
-    hasUpdateAvailable: Boolean,
-    onDismissRequest: () -> Unit,
-    onHistoryClick: () -> Unit,
-    onNewsClick: () -> Unit,
-    onNewReleaseClick: () -> Unit,
-    onSettingsClick: () -> Unit,
-) {
-    val itemColors =
-        MenuDefaults.itemColors(
-            textColor = if (pureBlack) Color.White else MaterialTheme.colorScheme.onSurface,
-            leadingIconColor =
-                if (pureBlack) {
-                    Color.White.copy(alpha = 0.82f)
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-        )
-
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismissRequest,
-        shape = RoundedCornerShape(24.dp),
-        containerColor = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 6.dp,
-    ) {
-        DropdownMenuItem(
-            text = { Text(stringResource(R.string.history)) },
-            onClick = onHistoryClick,
-            leadingIcon = {
-                HomeOverflowMenuIcon(
-                    iconRes = R.drawable.history,
-                    contentDescription = null,
-                    pureBlack = pureBlack,
-                )
-            },
-            colors = itemColors,
-        )
-        DropdownMenuItem(
-            text = { Text(stringResource(R.string.news)) },
-            onClick = onNewsClick,
-            leadingIcon = {
-                BadgedBox(badge = {
-                    if (hasUnreadNews) {
-                        Badge()
-                    }
-                }) {
-                    HomeOverflowMenuIcon(
-                        iconRes = R.drawable.newspaper,
-                        contentDescription = null,
-                        pureBlack = pureBlack,
-                    )
-                }
-            },
-            colors = itemColors,
-        )
-        DropdownMenuItem(
-            text = { Text(stringResource(R.string.new_release_albums)) },
-            onClick = onNewReleaseClick,
-            leadingIcon = {
-                HomeOverflowMenuIcon(
-                    iconRes = R.drawable.new_release,
-                    contentDescription = null,
-                    pureBlack = pureBlack,
-                )
-            },
-            colors = itemColors,
-        )
-        DropdownMenuItem(
-            text = { Text(stringResource(R.string.settings)) },
-            onClick = onSettingsClick,
-            leadingIcon = {
-                BadgedBox(badge = {
-                    if (hasUpdateAvailable) {
-                        Badge()
-                    }
-                }) {
-                    HomeOverflowMenuIcon(
-                        iconRes = R.drawable.settings,
-                        contentDescription = null,
-                        pureBlack = pureBlack,
-                    )
-                }
-            },
-            colors = itemColors,
-        )
     }
 }
 

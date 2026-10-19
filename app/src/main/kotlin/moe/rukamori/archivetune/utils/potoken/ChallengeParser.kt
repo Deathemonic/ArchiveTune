@@ -24,14 +24,14 @@ internal data class PageChallenge(
 
 internal fun parsePageChallenge(html: String): PageChallenge {
     val configuration = JSONObject()
-    Regex("ytcfg\\.set\\s*\\(").findAll(html).forEach { match ->
+    Regex("ytcfg\\.set\\s*\\(\\s*(?=\\{)").findAll(html).forEach { match ->
         val value = JSONObject(extractPageObject(html, match.range.last + 1))
         value.keys().forEach { key -> configuration.put(key, value.get(key)) }
     }
     if (configuration.optString("EVENT_ID").isBlank()) {
         throw PoTokenException("Attestation page is missing EVENT_ID")
     }
-    val attestationStart = Regex("window\\.ytAtN\\s*\\(").find(html)
+    val attestationStart = Regex("window\\.ytAtN\\s*\\(\\s*(?=\\{)").find(html)
         ?: throw PoTokenException("Attestation page is missing its challenge")
     val attestationJson = extractPageObject(html, attestationStart.range.last + 1)
         .replace(Regex("\\\\x([0-9a-fA-F]{2})")) { match -> "\\u00${match.groupValues[1]}" }

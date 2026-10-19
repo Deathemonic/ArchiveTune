@@ -22,6 +22,7 @@ import moe.rukamori.archivetune.morideobfuscator.youtubei.YoutubeiResolutionPrio
 import moe.rukamori.archivetune.morideobfuscator.youtubei.YoutubeiResolver
 import moe.rukamori.archivetune.morideobfuscator.youtubei.YoutubeiStreamRequest
 import moe.rukamori.archivetune.utils.YTPlayerUtils
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import timber.log.Timber
 import java.util.TimeZone
 import javax.inject.Inject
@@ -146,6 +147,29 @@ class YoutubeiStreamRepository
                     throw failure
                 }
 
+            val streamUrl = resolved.url.toHttpUrlOrNull()
+            val streamToken = streamUrl?.queryParameter("pot")
+            val tokenBinding =
+                when {
+                    streamToken.isNullOrBlank() -> "missing"
+                    streamToken == authState.poTokenGvs && authState.poTokenGvsVideoId == request.mediaId -> "video"
+                    streamToken == authState.poTokenGvsSession -> "session"
+                    else -> "other"
+                }
+            Timber.tag("YoutubeiResolver").d(
+                "Stream contract signedIn=%s format=%d tokenBinding=%s nPresent=%s nError=%s " +
+                    "signaturePresent=%s userAgentPresent=%s extractionProxy=%s streamProxy=%s",
+                authState.hasLoginCookie,
+                resolved.formatId,
+                tokenBinding,
+                !streamUrl?.queryParameter("n").isNullOrBlank(),
+                streamUrl?.queryParameter("n")?.startsWith("enhanced_except_") == true,
+                !streamUrl?.queryParameter("sig").isNullOrBlank() ||
+                    !streamUrl?.queryParameter("signature").isNullOrBlank(),
+                resolved.requestHeaders.any { (name, value) -> name.equals("User-Agent", ignoreCase = true) && value.isNotBlank() },
+                YouTube.proxy?.type()?.name ?: "DIRECT",
+                YouTube.streamOkHttpProxy.type().name,
+            )
             return ResolvedAudioStream(
                 url = resolved.url,
                 requestHeaders = resolved.requestHeaders,

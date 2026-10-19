@@ -420,6 +420,25 @@ class MusicService :
                 chain.proceed(
                     requestBuilder.build(),
                 )
+            }.addNetworkInterceptor { chain ->
+                val request = chain.request()
+                val response = chain.proceed(request)
+                if (response.code == 403 &&
+                    (request.url.host == "googlevideo.com" || request.url.host.endsWith(".googlevideo.com"))
+                ) {
+                    Timber.tag("YoutubeiResolver").w(
+                        "Media HTTP 403 tokenPresent=%s nPresent=%s nError=%s userAgentPresent=%s " +
+                            "rangePresent=%s redirected=%s routeProxy=%s",
+                        !request.url.queryParameter("pot").isNullOrBlank(),
+                        !request.url.queryParameter("n").isNullOrBlank(),
+                        request.url.queryParameter("n")?.startsWith("enhanced_except_") == true,
+                        !request.header("User-Agent").isNullOrBlank(),
+                        request.header("Range") != null,
+                        request.url.host != chain.call().request().url.host,
+                        chain.connection()?.route()?.proxy?.type()?.name ?: "UNKNOWN",
+                    )
+                }
+                response
             }.build()
     }
 

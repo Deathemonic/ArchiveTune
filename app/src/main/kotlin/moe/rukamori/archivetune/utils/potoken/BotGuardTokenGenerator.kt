@@ -568,7 +568,7 @@ object BotGuardTokenGenerator {
         ) {
             dispatchBridgeCallback {
                 val base64 = commaSeparatedBytesToBase64(csvBytes)
-                Timber.tag(TAG).d("Minted token for $identifier (${base64.length} chars)")
+                Timber.tag(TAG).d("Minted playback token (%d chars)", base64.length)
                 pendingMints
                     .remove(identifier)
                     ?.let { continuation ->

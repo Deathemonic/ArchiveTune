@@ -848,7 +848,16 @@ class HomeViewModel
                         if (!isCurrentAccountRefresh(refreshGeneration)) return@onSuccess
                         _accountName.value = info.name
                         _accountImageUrl.value = info.thumbnailUrl
+                        context.dataStore.edit { preferences ->
+                            if (isCurrentAccountRefresh(refreshGeneration)) {
+                                preferences[AccountNameKey] = info.name
+                                info.email?.takeIf { it.isNotBlank() }?.let { email ->
+                                    preferences[AccountEmailKey] = email
+                                }
+                            }
+                        }
                     }.onFailure { error ->
+                        if (error is CancellationException) throw error
                         Timber.w(error, "Failed to fetch account info")
                     }
 
@@ -1163,7 +1172,7 @@ class HomeViewModel
                 context.dataStore.data
                     .map { it[InnerTubeCookieKey] }
                     .distinctUntilChanged()
-                    .collect { cookie ->
+                    .collectLatest { cookie ->
                         try {
                             val isLoggedIn = hasYouTubeLoginCookie(cookie)
                             val shouldSynchronize =
@@ -1176,16 +1185,14 @@ class HomeViewModel
                             if (isLoggedIn && cookie != null && cookie.isNotEmpty()) {
                                 if (!prepareYouTubeAccount(cookie)) {
                                     clearAccountData()
-                                    return@collect
+                                    return@collectLatest
                                 }
-
-                                load()
 
                                 val refreshGeneration = beginAccountRefresh()
                                 supervisorScope {
-                                    kotlinx.coroutines.delay(100)
                                     launch { refreshAccountIdentity(refreshGeneration) }
                                     launch { refreshAccountPlaylistsInternal(refreshGeneration) }
+                                    load()
                                 }
 
                                 if (shouldSynchronize) {

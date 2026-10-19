@@ -88,7 +88,7 @@ fun TopAppBarOverflowMenu(
     ) {
         Column(
             modifier = Modifier
-                .width(300.dp)
+                .width(264.dp)
                 .shadow(6.dp, shape)
                 .clip(shape)
                 .hazeBlur(input = hazeInput, style = blurStyle)
@@ -165,17 +165,16 @@ private fun MenuProfileHeader(
         }
     }
     DropdownMenuItem(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp),
         text = {
             Column {
-                Text(stringResource(R.string.user_profile), style = MaterialTheme.typography.labelMedium)
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.titleMedium,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (profile != null && profile.email.isNotBlank() && profile.email != subtitle) {
+                if (profile != null && profile.email.isNotBlank()) {
                     Text(
                         text = profile.email,
                         style = MaterialTheme.typography.bodySmall,

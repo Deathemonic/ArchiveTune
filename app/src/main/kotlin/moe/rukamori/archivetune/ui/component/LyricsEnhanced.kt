@@ -162,7 +162,7 @@ fun LyricsEnhanced(
     var showShareImageDialog by remember { mutableStateOf(false) }
 
     val showTranslations =
-        preparedLyrics?.lines?.any { line -> line.translation != null } == true
+        preparedLyrics?.hasTranslations == true && preferences?.showTranslations == true
     val showPhonetics =
         preparedLyrics?.lines?.any { line -> line.romanizedText != null || line.phonetics.isNotEmpty() } == true
     val baseLayoutDirection = LocalLayoutDirection.current

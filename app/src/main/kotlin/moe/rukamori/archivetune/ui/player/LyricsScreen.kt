@@ -339,6 +339,7 @@ fun LyricsScreen(
                 showPlayerControlsState = showPlayerControlsState,
                 onShowPlayerControlsChange = onShowPlayerControlsChange,
                 onDismiss = menuState::dismiss,
+                lyricsRenderViewModel = lyricsRenderViewModel,
             )
         }
     }

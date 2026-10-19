@@ -56,6 +56,23 @@ class LyricsRenderViewModel
 
         private var observationJob: Job? = null
         private var binding: Binding? = null
+        private var translationVisibilityJob: Job? = null
+
+        fun onShowTranslationsChanged(show: Boolean) {
+            val lyrics = (_state.value as? LyricsRenderScreenState.Success)?.lyrics ?: return
+            if (!lyrics.hasTranslations) return
+            translationVisibilityJob?.cancel()
+            translationVisibilityJob = viewModelScope.launch {
+                try {
+                    prepareLyrics.setShowTranslations(show)
+                } catch (exception: CancellationException) {
+                    throw exception
+                } catch (exception: Exception) {
+                    reportException(exception)
+                    _state.value = LyricsRenderScreenState.Error(LyricsRenderError.INVALID_LYRICS)
+                }
+            }
+        }
 
         fun onPlaybackPositionChanged(positionMs: Long) {
             _playbackPositionMs.value = positionMs.coerceAtLeast(0L)

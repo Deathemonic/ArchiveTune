@@ -220,6 +220,7 @@
     <string name="remove_from_queue">Remove from queue</string>
     <string name="removed_song_from_queue">Removed \"%s\" from queue</string>
     <string name="removed_n_songs_from_queue">Removed %d songs from queue</string>
+    <string name="queue_undo_unavailable">Queue changed. Unable to undo.</string>
     <string name="search_online">Search online</string>
     <string name="tempo_and_pitch">Tempo and Pitch</string>
     <string name="tempo">Tempo</string>

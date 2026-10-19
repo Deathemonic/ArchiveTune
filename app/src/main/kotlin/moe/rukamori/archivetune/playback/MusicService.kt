@@ -716,6 +716,7 @@ class MusicService :
         private set
     lateinit var player: Player
         private set
+    private var pendingQueueRemoval: QueueRemoval? = null
     private lateinit var castPlaybackRepository: CastPlaybackRepository
     private lateinit var mediaSession: MediaLibrarySession
 
@@ -4443,6 +4444,28 @@ class MusicService :
         playNextShuffleOrder?.let(localPlayer::setShuffleOrder)
         player.prepare()
     }
+
+    internal fun removeQueueItems(windows: List<Timeline.Window>): QueueRemoval? {
+        if (isTogetherGuestSession()) return null
+        return QueueRemoval.remove(queueEditPlayer(), windows).also { pendingQueueRemoval = it }
+    }
+
+    internal fun restoreQueueItems(removal: QueueRemoval): Boolean {
+        if (pendingQueueRemoval !== removal || isTogetherGuestSession()) return false
+        pendingQueueRemoval = null
+        return removal.restore(queueEditPlayer())
+    }
+
+    internal fun discardQueueRemoval(removal: QueueRemoval) {
+        if (pendingQueueRemoval === removal) pendingQueueRemoval = null
+    }
+
+    private fun queueEditPlayer(): Player =
+        if (player.deviceInfo.playbackType == androidx.media3.common.DeviceInfo.PLAYBACK_TYPE_LOCAL) {
+            localPlayer
+        } else {
+            player
+        }
 
     fun moveQueueItemToNext(mediaItemIndex: Int) {
         val currentIndex = player.currentMediaItemIndex

@@ -53,6 +53,7 @@ class LyricsRenderViewModel
 
         private val _playbackPositionMs = MutableStateFlow(0L)
         val playbackPositionMs: StateFlow<Long> = _playbackPositionMs.asStateFlow()
+        private val playbackClock = LyricsPlaybackClock()
 
         private var observationJob: Job? = null
         private var binding: Binding? = null
@@ -75,7 +76,18 @@ class LyricsRenderViewModel
         }
 
         fun onPlaybackPositionChanged(positionMs: Long) {
-            _playbackPositionMs.value = positionMs.coerceAtLeast(0L)
+            _playbackPositionMs.value = playbackClock.reset(positionMs)
+        }
+
+        fun onPlaybackFrame(
+            positionMs: Long,
+            sampleTimeNanos: Long,
+            playbackSpeed: Float,
+            isAdvancing: Boolean,
+            durationMs: Long,
+        ) {
+            _playbackPositionMs.value =
+                playbackClock.update(positionMs, sampleTimeNanos, playbackSpeed, isAdvancing, durationMs)
         }
 
         fun bind(

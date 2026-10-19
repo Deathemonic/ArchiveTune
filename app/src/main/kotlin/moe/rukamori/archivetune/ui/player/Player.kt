@@ -1348,26 +1348,38 @@ fun BottomSheetPlayer(
                                     ),
                         ) {
                             enrichedMetadata?.let { metadata ->
-                                LandscapePlayerControls(
-                                    playbackContent = {
-                                        V8TransportControls(
-                                            playbackState = playbackState,
-                                            isPlaying = isPlaying,
-                                            isLoading = isLoading,
-                                            canSkipPrevious = canSkipPrevious,
-                                            canSkipNext = canSkipNext,
-                                            foreground = littleTextColor,
-                                            onPreviousClick = playerConnection::seekToPrevious,
-                                            onPlayPauseClick = {
-                                                if (playbackState == STATE_ENDED) {
-                                                    playerConnection.player.seekTo(0, 0)
-                                                    playerConnection.player.playWhenReady = true
-                                                } else {
-                                                    playerConnection.player.togglePlayPause()
-                                                }
-                                            },
-                                            onNextClick = playerConnection::seekToNext,
-                                        )
+                                LittlePlayerContent(
+                                    mediaMetadata = metadata,
+                                    sliderPosition = sliderPosition,
+                                    positionMs = position,
+                                    durationMs = duration,
+                                    textColor = littleTextColor,
+                                    liked = currentSongLiked,
+                                    onCollapse = state::collapseSoft,
+                                    onToggleLike = playerConnection::toggleLike,
+                                    onExpandQueue = openQueue,
+                                    onMenuClick = {
+                                        menuState.show {
+                                            PlayerMenu(
+                                                mediaMetadata = metadata,
+                                                navController = navController,
+                                                playerBottomSheetState = state,
+                                                sleepTimerEnabled = sleepTimerEnabled,
+                                                onSleepTimerClick = {
+                                                    if (sleepTimerEnabled) {
+                                                        playerConnection.service.sleepTimer.clear()
+                                                    } else {
+                                                        showSleepTimerDialog = true
+                                                    }
+                                                },
+                                                onShowDetailsDialog = {
+                                                    bottomSheetPageState.show {
+                                                        ShowMediaInfo(metadata.id)
+                                                    }
+                                                },
+                                                onDismiss = menuState::dismiss,
+                                            )
+                                        }
                                     },
                                 ) {
                                     LittlePlayerContent(
@@ -1547,6 +1559,14 @@ fun BottomSheetPlayer(
                                         mediaMetadata = metadata,
                                         navController = navController,
                                         playerBottomSheetState = state,
+                                        sleepTimerEnabled = sleepTimerEnabled,
+                                        onSleepTimerClick = {
+                                            if (sleepTimerEnabled) {
+                                                playerConnection.service.sleepTimer.clear()
+                                            } else {
+                                                showSleepTimerDialog = true
+                                            }
+                                        },
                                         onShowDetailsDialog = {
                                             bottomSheetPageState.show {
                                                 ShowMediaInfo(metadata.id)
@@ -1664,6 +1684,14 @@ fun BottomSheetPlayer(
                                                     mediaMetadata = metadata,
                                                     navController = navController,
                                                     playerBottomSheetState = state,
+                                                    sleepTimerEnabled = sleepTimerEnabled,
+                                                    onSleepTimerClick = {
+                                                        if (sleepTimerEnabled) {
+                                                            playerConnection.service.sleepTimer.clear()
+                                                        } else {
+                                                            showSleepTimerDialog = true
+                                                        }
+                                                    },
                                                     onShowDetailsDialog = {
                                                         bottomSheetPageState.show {
                                                             ShowMediaInfo(metadata.id)
@@ -1823,6 +1851,14 @@ fun BottomSheetPlayer(
                                         mediaMetadata = metadata,
                                         navController = navController,
                                         playerBottomSheetState = state,
+                                        sleepTimerEnabled = sleepTimerEnabled,
+                                        onSleepTimerClick = {
+                                            if (sleepTimerEnabled) {
+                                                playerConnection.service.sleepTimer.clear()
+                                            } else {
+                                                showSleepTimerDialog = true
+                                            }
+                                        },
                                         onShowDetailsDialog = {
                                             bottomSheetPageState.show {
                                                 ShowMediaInfo(metadata.id)

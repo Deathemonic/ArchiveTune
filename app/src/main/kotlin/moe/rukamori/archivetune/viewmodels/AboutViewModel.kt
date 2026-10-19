@@ -422,7 +422,7 @@ class AboutViewModel
                             id = "website",
                             iconResId = R.drawable.website,
                             labelResId = R.string.about_content_desc_website,
-                            url = "https://archivetune.koiiverse.cloud",
+                            url = "https://archivetune.miuka.moe",
                         ),
                         AboutLinkUiModel(
                             id = "telegram",
@@ -434,7 +434,7 @@ class AboutViewModel
                             id = "donate",
                             iconResId = R.drawable.coffee,
                             labelResId = R.string.about_content_desc_donate,
-                            url = "https://koiiverse.cloud/donate",
+                            url = "https://miuka.moe/donate",
                         ),
                         AboutLinkUiModel(
                             id = "discord",
@@ -446,7 +446,7 @@ class AboutViewModel
                             id = "privacy_policy",
                             iconResId = R.drawable.lock,
                             labelResId = R.string.privacy,
-                            url = "https://archivetune.koiiverse.cloud/privacy",
+                            url = "https://archivetune.miuka.moe/privacy",
                         ),
                     ),
                 leadDeveloper =
@@ -467,7 +467,7 @@ class AboutViewModel
                                     id = "website",
                                     iconResId = R.drawable.website,
                                     labelResId = R.string.about_content_desc_website,
-                                    url = "https://koiiverse.cloud",
+                                    url = "https://miuka.moe",
                                 ),
                                 AboutLinkUiModel(
                                     id = "discord",

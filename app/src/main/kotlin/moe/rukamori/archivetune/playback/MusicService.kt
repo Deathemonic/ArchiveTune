@@ -4936,7 +4936,7 @@ class MusicService :
                                         if (joined?.role is moe.rukamori.archivetune.together.TogetherRole.Guest) {
                                             togetherPendingGuestControl = null
                                             togetherLastSentControlAction = null
-                                            scope.launch(SilentHandler) { applyRemoteRoomState(joined.roomState, force = true) }
+                                            restoreTogetherGuestPlayback()
                                         }
                                     }
 
@@ -5193,7 +5193,7 @@ class MusicService :
                                         if (joined?.role is moe.rukamori.archivetune.together.TogetherRole.Guest) {
                                             togetherPendingGuestControl = null
                                             togetherLastSentControlAction = null
-                                            scope.launch(SilentHandler) { applyRemoteRoomState(joined.roomState, force = true) }
+                                            restoreTogetherGuestPlayback()
                                         }
                                     }
 
@@ -5767,11 +5767,20 @@ class MusicService :
             }
     }
 
+    private fun restoreTogetherGuestPlayback() {
+        scope.launch(SilentHandler) {
+            val joined = togetherSessionState.value as? moe.rukamori.archivetune.together.TogetherSessionState.Joined
+            if (joined?.role is moe.rukamori.archivetune.together.TogetherRole.Guest && !isTogetherApplyingRemote()) {
+                applyRemoteRoomState(joined.roomState, force = true)
+            }
+        }
+    }
+
     private suspend fun applyRemoteRoomState(
         state: moe.rukamori.archivetune.together.TogetherRoomState,
         force: Boolean = false,
-    ) {
-        val pid = togetherSelfParticipantId ?: return
+    ) = withContext(Dispatchers.Main) {
+        val pid = togetherSelfParticipantId ?: return@withContext
         val now = android.os.SystemClock.elapsedRealtime()
 
         val pending = togetherPendingGuestControl
@@ -5792,7 +5801,7 @@ class MusicService :
                 }
                 togetherPendingGuestControl = null
             } else {
-                if (mismatch) return
+                if (mismatch) return@withContext
                 togetherPendingGuestControl = null
             }
         }
@@ -5804,7 +5813,7 @@ class MusicService :
                 force = force,
             )
         ) {
-            return
+            return@withContext
         }
 
         val targetPos =
@@ -5815,97 +5824,95 @@ class MusicService :
                 nowElapsedRealtimeMs = now,
             )
 
-        withContext(Dispatchers.Main) {
-            togetherApplyingRemote = true
-            togetherSuppressEchoUntilElapsedMs =
-                TogetherPlaybackSync.echoSuppressionUntil(
-                    android.os.SystemClock.elapsedRealtime(),
-                )
-            try {
-                val desiredItems = state.queue.map { it.toMediaMetadata().toMediaItem() }
-                val desiredIds = state.queue.map { it.id }
-                val desiredHash = state.queueHash
-                val localIds = player.mediaItems.mapNotNull { it.metadata?.id ?: it.mediaId }.filter { it.isNotBlank() }
-                val localHash =
-                    if (localIds.isEmpty()) {
-                        ""
-                    } else {
-                        moe.rukamori.archivetune.utils
-                            .md5(localIds.joinToString(separator = "|"))
-                    }
-                val needsRebuild =
-                    TogetherPlaybackSync.needsQueueRebuild(
-                        desiredHash = desiredHash,
-                        desiredIds = desiredIds,
-                        localHash = localHash,
-                        localIds = localIds,
-                    )
-
-                if (desiredItems.isNotEmpty() && needsRebuild) {
-                    togetherLastAppliedQueueHash = desiredHash.ifBlank { localHash }
-                    val startIndex = state.currentIndex.coerceIn(0, desiredItems.lastIndex)
-                    suppressAutoPlayback = false
-                    currentQueue =
-                        moe.rukamori.archivetune.playback.queues.ListQueue(
-                            title = getString(R.string.music_player),
-                            items = desiredItems,
-                            startIndex = startIndex,
-                            position = targetPos,
-                        )
-                    queueTitle = null
-                    player.setMediaItems(desiredItems, startIndex, targetPos)
-                    player.prepare()
-                    player.repeatMode = state.repeatMode
-                    player.shuffleModeEnabled = state.shuffleEnabled
-                    player.playWhenReady = state.isPlaying
-                    togetherLastRemoteAppliedIndex = startIndex
+        togetherApplyingRemote = true
+        togetherSuppressEchoUntilElapsedMs =
+            TogetherPlaybackSync.echoSuppressionUntil(
+                android.os.SystemClock.elapsedRealtime(),
+            )
+        try {
+            val desiredItems = state.queue.map { it.toMediaMetadata().toMediaItem() }
+            val desiredIds = state.queue.map { it.id }
+            val desiredHash = state.queueHash
+            val localIds = player.mediaItems.mapNotNull { it.metadata?.id ?: it.mediaId }.filter { it.isNotBlank() }
+            val localHash =
+                if (localIds.isEmpty()) {
+                    ""
                 } else {
-                    val index =
-                        if (player.mediaItemCount > 0) {
-                            state.currentIndex.coerceIn(0, player.mediaItemCount - 1)
-                        } else {
-                            0
-                        }
-                    val indexChanged = player.mediaItemCount > 0 && index != player.currentMediaItemIndex
-
-                    if (indexChanged) {
-                        if (player.repeatMode != state.repeatMode) player.repeatMode = state.repeatMode
-                        if (player.shuffleModeEnabled != state.shuffleEnabled) player.shuffleModeEnabled = state.shuffleEnabled
-                        player.seekTo(index, targetPos)
-                        player.prepare()
-                        player.playWhenReady = state.isPlaying
-                    } else {
-                        val playbackStateChanged = player.playWhenReady != state.isPlaying
-                        if (player.repeatMode != state.repeatMode) player.repeatMode = state.repeatMode
-                        if (player.shuffleModeEnabled != state.shuffleEnabled) player.shuffleModeEnabled = state.shuffleEnabled
-                        if (playbackStateChanged) player.playWhenReady = state.isPlaying
-                        val shouldSeekForDrift =
-                            TogetherPlaybackSync.shouldSeekForDrift(
-                                currentPositionMs = player.currentPosition,
-                                targetPositionMs = targetPos,
-                                isPlaying = state.isPlaying,
-                                isOnlineSession = togetherIsOnlineSession,
-                            )
-                        if (shouldSeekForDrift || (playbackStateChanged && !state.isPlaying)) {
-                            player.seekTo(targetPos)
-                            player.prepare()
-                        }
-                    }
-                    togetherLastRemoteAppliedIndex = index
+                    moe.rukamori.archivetune.utils
+                        .md5(localIds.joinToString(separator = "|"))
                 }
-                togetherLastRemoteAppliedPlayWhenReady = state.isPlaying
-                togetherLastAppliedRoomStateSentAtElapsedMs = sentAt
+            val needsRebuild =
+                TogetherPlaybackSync.needsQueueRebuild(
+                    desiredHash = desiredHash,
+                    desiredIds = desiredIds,
+                    localHash = localHash,
+                    localIds = localIds,
+                )
 
-                togetherSessionState.value =
-                    moe.rukamori.archivetune.together.TogetherSessionState.Joined(
-                        role = moe.rukamori.archivetune.together.TogetherRole.Guest,
-                        sessionId = state.sessionId,
-                        selfParticipantId = pid,
-                        roomState = state,
+            if (desiredItems.isNotEmpty() && needsRebuild) {
+                togetherLastAppliedQueueHash = desiredHash.ifBlank { localHash }
+                val startIndex = state.currentIndex.coerceIn(0, desiredItems.lastIndex)
+                suppressAutoPlayback = false
+                currentQueue =
+                    moe.rukamori.archivetune.playback.queues.ListQueue(
+                        title = getString(R.string.music_player),
+                        items = desiredItems,
+                        startIndex = startIndex,
+                        position = targetPos,
                     )
-            } finally {
-                togetherApplyingRemote = false
+                queueTitle = null
+                player.setMediaItems(desiredItems, startIndex, targetPos)
+                player.prepare()
+                player.repeatMode = state.repeatMode
+                player.shuffleModeEnabled = state.shuffleEnabled
+                player.playWhenReady = state.isPlaying
+                togetherLastRemoteAppliedIndex = startIndex
+            } else {
+                val index =
+                    if (player.mediaItemCount > 0) {
+                        state.currentIndex.coerceIn(0, player.mediaItemCount - 1)
+                    } else {
+                        0
+                    }
+                val indexChanged = player.mediaItemCount > 0 && index != player.currentMediaItemIndex
+
+                if (indexChanged) {
+                    if (player.repeatMode != state.repeatMode) player.repeatMode = state.repeatMode
+                    if (player.shuffleModeEnabled != state.shuffleEnabled) player.shuffleModeEnabled = state.shuffleEnabled
+                    player.seekTo(index, targetPos)
+                    player.prepare()
+                    player.playWhenReady = state.isPlaying
+                } else {
+                    val playbackStateChanged = player.playWhenReady != state.isPlaying
+                    if (player.repeatMode != state.repeatMode) player.repeatMode = state.repeatMode
+                    if (player.shuffleModeEnabled != state.shuffleEnabled) player.shuffleModeEnabled = state.shuffleEnabled
+                    if (playbackStateChanged) player.playWhenReady = state.isPlaying
+                    val shouldSeekForDrift =
+                        TogetherPlaybackSync.shouldSeekForDrift(
+                            currentPositionMs = player.currentPosition,
+                            targetPositionMs = targetPos,
+                            isPlaying = state.isPlaying,
+                            isOnlineSession = togetherIsOnlineSession,
+                        )
+                    if (shouldSeekForDrift || (playbackStateChanged && !state.isPlaying)) {
+                        player.seekTo(targetPos)
+                        player.prepare()
+                    }
+                }
+                togetherLastRemoteAppliedIndex = index
             }
+            togetherLastRemoteAppliedPlayWhenReady = state.isPlaying
+            togetherLastAppliedRoomStateSentAtElapsedMs = sentAt
+
+            togetherSessionState.value =
+                moe.rukamori.archivetune.together.TogetherSessionState.Joined(
+                    role = moe.rukamori.archivetune.together.TogetherRole.Guest,
+                    sessionId = state.sessionId,
+                    selfParticipantId = pid,
+                    roomState = state,
+                )
+        } finally {
+            togetherApplyingRemote = false
         }
     }
 
@@ -6720,10 +6727,11 @@ class MusicService :
 
         val joined = togetherSessionState.value as? moe.rukamori.archivetune.together.TogetherSessionState.Joined
         if (joined?.role is moe.rukamori.archivetune.together.TogetherRole.Guest &&
-            reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK
+            reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK &&
+            !isTogetherApplyingRemote()
         ) {
             if (!joined.roomState.settings.allowGuestsToControlPlayback) {
-                scope.launch(SilentHandler) { applyRemoteRoomState(joined.roomState, force = true) }
+                restoreTogetherGuestPlayback()
                 return
             }
             val now = android.os.SystemClock.elapsedRealtime()
@@ -7041,10 +7049,11 @@ class MusicService :
         }
         val joined = togetherSessionState.value as? moe.rukamori.archivetune.together.TogetherSessionState.Joined
         if (joined?.role is moe.rukamori.archivetune.together.TogetherRole.Guest &&
-            events.contains(Player.EVENT_PLAY_WHEN_READY_CHANGED)
+            events.contains(Player.EVENT_PLAY_WHEN_READY_CHANGED) &&
+            !isTogetherApplyingRemote()
         ) {
             if (!joined.roomState.settings.allowGuestsToControlPlayback) {
-                scope.launch(SilentHandler) { applyRemoteRoomState(joined.roomState, force = true) }
+                restoreTogetherGuestPlayback()
             } else {
                 val now = android.os.SystemClock.elapsedRealtime()
                 val playWhenReady = this.player.playWhenReady
@@ -7261,7 +7270,7 @@ class MusicService :
         if (joined?.role is moe.rukamori.archivetune.together.TogetherRole.Guest) {
             if (!isTogetherApplyingRemote()) {
                 if (!joined.roomState.settings.allowGuestsToControlPlayback) {
-                    scope.launch(SilentHandler) { applyRemoteRoomState(joined.roomState, force = true) }
+                    restoreTogetherGuestPlayback()
                     return
                 }
                 requestTogetherControl(
@@ -7293,7 +7302,7 @@ class MusicService :
         if (joined?.role is moe.rukamori.archivetune.together.TogetherRole.Guest) {
             if (!isTogetherApplyingRemote()) {
                 if (!joined.roomState.settings.allowGuestsToControlPlayback) {
-                    scope.launch(SilentHandler) { applyRemoteRoomState(joined.roomState, force = true) }
+                    restoreTogetherGuestPlayback()
                     return
                 }
                 requestTogetherControl(

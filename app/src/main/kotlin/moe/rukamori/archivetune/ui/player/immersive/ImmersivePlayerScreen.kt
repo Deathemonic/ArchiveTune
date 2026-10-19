@@ -82,6 +82,7 @@ import dev.chrisbanes.haze.rememberHazeState
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.ui.component.ListDialog
 import moe.rukamori.archivetune.canvas.CanvasVideo
+import moe.rukamori.archivetune.ui.player.LandscapePlayerControls
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlayer
 import moe.rukamori.archivetune.ui.player.rememberOfflineArtworkImageRequest
 import moe.rukamori.archivetune.utils.makeTimeString
@@ -313,26 +314,36 @@ private fun ImmersiveLandscape(
             modifier =
                 Modifier
                     .align(Alignment.TopStart)
+                    .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Start))
                     .padding(start = 24.dp)
                     .statusBarsPadding()
                     .padding(top = 18.dp),
         )
-        Column(
+        LandscapePlayerControls(
             modifier =
                 Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(0.52f)
                     .align(Alignment.CenterEnd)
-                    .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.End + WindowInsetsSides.Top))
+                    .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))
                     .padding(
-                        start = 30.dp,
-                        top = 18.dp,
-                        end = 30.dp,
-                        bottom = contentBottomPadding + 18.dp,
+                        start = 16.dp,
+                        top = 8.dp,
+                        end = 16.dp,
+                        bottom = contentBottomPadding + 8.dp,
                     ),
+            playbackContent = {
+                TransportControls(
+                    isPlaying = model.isPlaying,
+                    isBuffering = model.isBuffering,
+                    canSkipPrevious = model.canSkipPrevious,
+                    canSkipNext = model.canSkipNext,
+                    onAction = onAction,
+                )
+            },
         ) {
             FormatSeam(if (showCodecOnPlayer) model.formatDetails else "")
-            Spacer(modifier = Modifier.height(22.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             MetadataRow(
                 title = model.title,
                 artists = model.artists,
@@ -340,24 +351,16 @@ private fun ImmersiveLandscape(
                 albumId = model.albumId,
                 onAction = onAction,
             )
-            Spacer(modifier = Modifier.weight(1f))
+            if (showVolumeBar) {
+                Spacer(modifier = Modifier.height(4.dp))
+                VolumeControls(volume = model.volume, onAction = onAction)
+            }
             ProgressSection(
                 model = model,
                 showCodecOnPlayer = showCodecOnPlayer,
                 onAction = onAction,
             )
-            Spacer(modifier = Modifier.height(18.dp))
-            TransportControls(
-                isPlaying = model.isPlaying,
-                isBuffering = model.isBuffering,
-                canSkipPrevious = model.canSkipPrevious,
-                canSkipNext = model.canSkipNext,
-                onAction = onAction,
-            )
-            if (showVolumeBar) {
-                Spacer(modifier = Modifier.height(20.dp))
-                VolumeControls(volume = model.volume, onAction = onAction)
-            }
+            Spacer(modifier = Modifier.height(4.dp))
         }
     }
 }

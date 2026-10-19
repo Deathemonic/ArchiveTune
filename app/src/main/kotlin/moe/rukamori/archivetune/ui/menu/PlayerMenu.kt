@@ -107,6 +107,8 @@ import moe.rukamori.archivetune.ui.component.MenuSurfaceSection
 import moe.rukamori.archivetune.ui.component.NewAction
 import moe.rukamori.archivetune.ui.component.NewActionGrid
 import moe.rukamori.archivetune.ui.player.rememberDeviceMusicVolumeController
+import moe.rukamori.archivetune.ui.utils.navigateToAlbum
+import moe.rukamori.archivetune.ui.utils.navigateToArtist
 import moe.rukamori.archivetune.utils.ExternalDownloaderLaunchResult
 import moe.rukamori.archivetune.utils.SpeedDialPin
 import moe.rukamori.archivetune.utils.SpeedDialPinType
@@ -290,7 +292,7 @@ fun PlayerMenu(
                             .fillMaxWidth()
                             .clickable {
                                 splitArtist.originalArtist?.let { artist ->
-                                    navController.navigate("artist/${artist.id}")
+                                    navController.navigateToArtist(artist.id)
                                     showSelectArtistDialog = false
                                     playerBottomSheetState.collapseSoft()
                                     onDismiss()
@@ -710,7 +712,7 @@ fun PlayerMenu(
                                         if (splitArtists.size == 1 && splitArtists[0].originalArtist != null) {
                                             onDismiss()
                                             playerBottomSheetState.collapseSoft()
-                                            navController.navigate("artist/${splitArtists[0].originalArtist!!.id}")
+                                            navController.navigateToArtist(splitArtists[0].originalArtist!!.id)
                                         } else {
                                             showSelectArtistDialog = true
                                         }
@@ -739,7 +741,7 @@ fun PlayerMenu(
                                     Modifier.clickable {
                                         onDismiss()
                                         playerBottomSheetState.collapseSoft()
-                                        navController.navigate("album/${mediaMetadata.album.id}")
+                                        navController.navigateToAlbum(mediaMetadata.album.id)
                                     },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             )

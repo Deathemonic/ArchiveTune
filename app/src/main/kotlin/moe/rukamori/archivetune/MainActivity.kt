@@ -303,6 +303,8 @@ import moe.rukamori.archivetune.ui.theme.extractThemeColor
 import moe.rukamori.archivetune.ui.theme.extractWallpaperThemeColor
 import moe.rukamori.archivetune.ui.utils.appBarScrollBehavior
 import moe.rukamori.archivetune.ui.utils.backToMain
+import moe.rukamori.archivetune.ui.utils.navigateToAlbum
+import moe.rukamori.archivetune.ui.utils.navigateToArtist
 import moe.rukamori.archivetune.ui.utils.resetHeightOffset
 import moe.rukamori.archivetune.updates.ObserveUpdateSettingsUseCase
 import moe.rukamori.archivetune.utils.PreferenceStore
@@ -2835,7 +2837,7 @@ class MainActivity : ComponentActivity() {
                                 .albumSongs(playlistId)
                                 .onSuccess { songs ->
                                     songs.firstOrNull()?.album?.id?.let { browseId ->
-                                        navController.navigate("album/$browseId")
+                                        navController.navigateToAlbum(browseId)
                                     }
                                 }.onFailure { reportException(it) }
                         }
@@ -2847,13 +2849,13 @@ class MainActivity : ComponentActivity() {
 
             "browse" -> {
                 uri.lastPathSegment?.let { browseId ->
-                    navController.navigate("album/$browseId")
+                    navController.navigateToAlbum(browseId)
                 }
             }
 
             "channel", "c" -> {
                 uri.lastPathSegment?.let { artistId ->
-                    navController.navigate("artist/$artistId")
+                    navController.navigateToArtist(artistId)
                 }
             }
 

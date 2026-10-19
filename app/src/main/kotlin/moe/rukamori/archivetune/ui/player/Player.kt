@@ -147,6 +147,8 @@ import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.canvas.CanvasPlaybackRequest
+import moe.rukamori.archivetune.ui.utils.navigateToAlbum
+import moe.rukamori.archivetune.ui.utils.navigateToArtist
 import moe.rukamori.archivetune.viewmodels.CanvasPlaybackViewModel
 import moe.rukamori.archivetune.viewmodels.CanvasPlaybackState
 import moe.rukamori.archivetune.viewmodels.ImmersivePlayerViewModel
@@ -828,11 +830,11 @@ fun BottomSheetPlayer(
             when (event) {
                 is ImmersivePlayerEvent.OpenAlbum -> {
                     state.collapseSoft()
-                    navController.navigate("album/${event.id}")
+                    navController.navigateToAlbum(event.id)
                 }
                 is ImmersivePlayerEvent.OpenArtist -> {
                     state.collapseSoft()
-                    navController.navigate("artist/${event.id}")
+                    navController.navigateToArtist(event.id)
                 }
                 ImmersivePlayerEvent.OpenMenu -> {
                     val metadata = mediaMetadata ?: return@collect

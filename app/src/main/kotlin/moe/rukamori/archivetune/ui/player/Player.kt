@@ -1381,34 +1381,7 @@ fun BottomSheetPlayer(
                                             )
                                         }
                                     },
-                                ) {
-                                    LittlePlayerContent(
-                                        mediaMetadata = metadata,
-                                        sliderPosition = sliderPosition,
-                                        positionMs = position,
-                                        durationMs = duration,
-                                        textColor = littleTextColor,
-                                        liked = currentSongLiked,
-                                        onCollapse = state::collapseSoft,
-                                        onToggleLike = playerConnection::toggleLike,
-                                        onExpandQueue = openQueue,
-                                        onMenuClick = {
-                                            menuState.show {
-                                                PlayerMenu(
-                                                    mediaMetadata = metadata,
-                                                    navController = navController,
-                                                    playerBottomSheetState = state,
-                                                    onShowDetailsDialog = {
-                                                        bottomSheetPageState.show {
-                                                            ShowMediaInfo(metadata.id)
-                                                        }
-                                                    },
-                                                    onDismiss = menuState::dismiss,
-                                                )
-                                            }
-                                        },
-                                    )
-                                }
+                                )
                             }
                         }
                     }

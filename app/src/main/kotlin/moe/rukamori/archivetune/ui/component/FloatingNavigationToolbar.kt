@@ -52,6 +52,7 @@ import moe.rukamori.archivetune.constants.FloatingBarStandaloneCornerRadius
 import moe.rukamori.archivetune.constants.NavigationBarBackgroundStyle
 import moe.rukamori.archivetune.constants.NavigationBarHeight
 import moe.rukamori.archivetune.constants.NavigationBarMaxWidth
+import moe.rukamori.archivetune.constants.NavigationBarMode
 import moe.rukamori.archivetune.ui.screens.Screens
 
 private val NavigationItemsMaxWidth = 360.dp
@@ -65,11 +66,13 @@ fun FloatingNavigationToolbar(
     hazeState: HazeState,
     modifier: Modifier = Modifier,
     miniPlayerProximityProvider: () -> Float = { 0f },
+    navigationBarMode: NavigationBarMode = NavigationBarMode.CONNECTED,
     isSelected: (Screens) -> Boolean,
     onItemClick: (Screens, Boolean) -> Unit,
     onSearchItemDoubleClick: (() -> Unit)? = null,
 ) {
-    val miniPlayerProximity = miniPlayerProximityProvider()
+    val miniPlayerProximity =
+        if (navigationBarMode == NavigationBarMode.CONNECTED) miniPlayerProximityProvider() else 0f
     val navigationShape =
         remember(miniPlayerProximity) {
             RoundedCornerShape(

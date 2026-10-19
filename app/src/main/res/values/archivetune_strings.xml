@@ -328,6 +328,9 @@
     <string name="lyrics_background_default">Default</string>
     <string name="mini_player_background_style">Mini player background style</string>
     <string name="navigation_bar_background_style">Navigation bar background style</string>
+    <string name="navigation_bar_mode">Navigation bar mode</string>
+    <string name="navigation_bar_mode_connected">Connected</string>
+    <string name="navigation_bar_mode_standalone">Standalone</string>
     <string name="acrylic">Acrylic</string>
     <string name="follow_theme">Follow theme</string>
     <string name="gradient">Gradient</string>

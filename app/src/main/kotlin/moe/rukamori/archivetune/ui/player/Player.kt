@@ -161,6 +161,7 @@ import moe.rukamori.archivetune.constants.BlurRadiusKey
 import moe.rukamori.archivetune.constants.DarkModeKey
 import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
+import moe.rukamori.archivetune.constants.NavigationBarMode
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyleKey
 import moe.rukamori.archivetune.constants.PlayerButtonsStyle
@@ -300,6 +301,7 @@ fun BottomSheetPlayer(
     modifier: Modifier = Modifier,
     pureBlack: Boolean,
     navigationProximityProvider: () -> Float = { 0f },
+    navigationBarMode: NavigationBarMode = NavigationBarMode.CONNECTED,
     canvasViewModel: CanvasPlaybackViewModel = hiltViewModel(),
     immersivePlayerViewModel: ImmersivePlayerViewModel = hiltViewModel(),
 ) {
@@ -1179,6 +1181,7 @@ fun BottomSheetPlayer(
                 hazeState = hazeState,
                 pureBlack = pureBlack,
                 navigationProximityProvider = navigationProximityProvider,
+                navigationBarMode = navigationBarMode,
             )
         },
     ) {

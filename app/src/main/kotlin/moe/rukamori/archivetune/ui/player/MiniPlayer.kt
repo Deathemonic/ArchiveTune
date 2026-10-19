@@ -54,6 +54,7 @@ import moe.rukamori.archivetune.constants.FloatingBarOuterCornerRadius
 import moe.rukamori.archivetune.constants.FloatingBarStandaloneCornerRadius
 import moe.rukamori.archivetune.constants.MiniPlayerHeight
 import moe.rukamori.archivetune.constants.NavigationBarMaxWidth
+import moe.rukamori.archivetune.constants.NavigationBarMode
 import moe.rukamori.archivetune.constants.SwipeSensitivityKey
 import moe.rukamori.archivetune.ui.component.FloatingBarBlurBackground
 import moe.rukamori.archivetune.ui.theme.PlayerColorExtractor
@@ -71,6 +72,7 @@ fun MiniPlayer(
     modifier: Modifier = Modifier,
     pureBlack: Boolean,
     navigationProximityProvider: () -> Float = { 0f },
+    navigationBarMode: NavigationBarMode = NavigationBarMode.CONNECTED,
 ) {
     NewMiniPlayer(
         position = position,
@@ -79,6 +81,7 @@ fun MiniPlayer(
         modifier = modifier,
         pureBlack = pureBlack,
         navigationProximityProvider = navigationProximityProvider,
+        navigationBarMode = navigationBarMode,
     )
 }
 
@@ -90,6 +93,7 @@ private fun NewMiniPlayer(
     modifier: Modifier = Modifier,
     pureBlack: Boolean,
     navigationProximityProvider: () -> Float,
+    navigationBarMode: NavigationBarMode,
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
     val context = LocalContext.current
@@ -194,7 +198,8 @@ private fun NewMiniPlayer(
         rememberMiniPlayerContentColors(
             useArtworkBackground = shouldUseArtworkBackground && backgroundPalette != null,
         )
-    val proximity = navigationProximityProvider()
+    val proximity =
+        if (navigationBarMode == NavigationBarMode.CONNECTED) navigationProximityProvider() else 0f
     val miniPlayerShape =
         remember(proximity) {
             RoundedCornerShape(

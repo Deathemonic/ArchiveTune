@@ -97,6 +97,8 @@ import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyleKey
 import moe.rukamori.archivetune.constants.NavigationBarBackgroundStyle
 import moe.rukamori.archivetune.constants.NavigationBarBackgroundStyleKey
+import moe.rukamori.archivetune.constants.NavigationBarMode
+import moe.rukamori.archivetune.constants.NavigationBarModeKey
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyleKey
 import moe.rukamori.archivetune.constants.PlayerButtonsStyle
@@ -216,6 +218,11 @@ fun AppearanceSettings(navController: NavController) {
         rememberEnumPreference(
             NavigationBarBackgroundStyleKey,
             defaultValue = NavigationBarBackgroundStyle.THEME,
+        )
+    val (navigationBarMode, onNavigationBarModeChange) =
+        rememberEnumPreference(
+            NavigationBarModeKey,
+            defaultValue = NavigationBarMode.CONNECTED,
         )
     val (disableBlur, onDisableBlurChange) = rememberPreference(DisableBlurKey, defaultValue = false)
     val (disableAnimations, onDisableAnimationsChange) =
@@ -712,6 +719,21 @@ fun AppearanceSettings(navController: NavController) {
                                 NavigationBarBackgroundStyle.THEME -> stringResource(R.string.follow_theme)
                                 NavigationBarBackgroundStyle.BLUR -> stringResource(R.string.blur)
                                 NavigationBarBackgroundStyle.ACRYLIC -> stringResource(R.string.acrylic)
+                            }
+                        },
+                    )
+                }
+
+                item {
+                    EnumListPreference(
+                        title = { Text(stringResource(R.string.navigation_bar_mode)) },
+                        icon = { Icon(painterResource(R.drawable.palette), null) },
+                        selectedValue = navigationBarMode,
+                        onValueSelected = onNavigationBarModeChange,
+                        valueText = {
+                            when (it) {
+                                NavigationBarMode.CONNECTED -> stringResource(R.string.navigation_bar_mode_connected)
+                                NavigationBarMode.STANDALONE -> stringResource(R.string.navigation_bar_mode_standalone)
                             }
                         },
                     )

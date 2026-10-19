@@ -225,6 +225,8 @@ import moe.rukamori.archivetune.constants.NavigationBarBackgroundStyleKey
 import moe.rukamori.archivetune.constants.NavigationBarBottomPadding
 import moe.rukamori.archivetune.constants.NavigationBarHeight
 import moe.rukamori.archivetune.constants.NavigationBarHorizontalPadding
+import moe.rukamori.archivetune.constants.NavigationBarMode
+import moe.rukamori.archivetune.constants.NavigationBarModeKey
 import moe.rukamori.archivetune.constants.PauseSearchHistoryKey
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyleKey
@@ -1011,6 +1013,10 @@ class MainActivity : ComponentActivity() {
                     val navigationBarBackgroundStyle by rememberEnumPreference(
                         key = NavigationBarBackgroundStyleKey,
                         defaultValue = NavigationBarBackgroundStyle.THEME,
+                    )
+                    val navigationBarMode by rememberEnumPreference(
+                        key = NavigationBarModeKey,
+                        defaultValue = NavigationBarMode.CONNECTED,
                     )
                     val menuLifecycleOwner = LocalLifecycleOwner.current
                     LaunchedEffect(mainMenuViewModel, navController, menuLifecycleOwner) {
@@ -2290,6 +2296,7 @@ class MainActivity : ComponentActivity() {
                                                     hazeState = floatingBarsHazeState,
                                                     pureBlack = pureBlack,
                                                     navigationProximityProvider = navigationProximityProvider,
+                                                    navigationBarMode = navigationBarMode,
                                                 )
                                             }
 
@@ -2336,6 +2343,7 @@ class MainActivity : ComponentActivity() {
                                                     backgroundStyle = navigationBarBackgroundStyle,
                                                     hazeState = floatingBarsHazeState,
                                                     miniPlayerProximityProvider = navigationProximityProvider,
+                                                    navigationBarMode = navigationBarMode,
                                                     modifier =
                                                         Modifier
                                                             .align(Alignment.BottomCenter)

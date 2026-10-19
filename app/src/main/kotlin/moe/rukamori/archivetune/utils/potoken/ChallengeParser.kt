@@ -25,7 +25,7 @@ internal data class PageChallenge(
 internal fun parsePageChallenge(html: String): PageChallenge {
     val configuration = JSONObject()
     Regex("ytcfg\\.set\\s*\\(\\s*(?=\\{)").findAll(html).forEach { match ->
-        val value = JSONObject(extractPageObject(html, match.range.last + 1))
+        val value = parsePageObject(extractPageObject(html, match.range.last + 1))
         value.keys().forEach { key -> configuration.put(key, value.get(key)) }
     }
     if (configuration.optString("EVENT_ID").isBlank()) {
@@ -33,12 +33,10 @@ internal fun parsePageChallenge(html: String): PageChallenge {
     }
     val attestationStart = Regex("window\\.ytAtN\\s*\\(\\s*(?=\\{)").find(html)
         ?: throw PoTokenException("Attestation page is missing its challenge")
-    val attestationJson = extractPageObject(html, attestationStart.range.last + 1)
-        .replace(Regex("\\\\x([0-9a-fA-F]{2})")) { match -> "\\u00${match.groupValues[1]}" }
-    val attestation = JSONObject(attestationJson)
+    val attestation = parsePageObject(extractPageObject(html, attestationStart.range.last + 1))
     val response = when (val value = attestation.get("R")) {
         is JSONObject -> value
-        is String -> JSONObject(value)
+        is String -> parsePageObject(value)
         else -> throw PoTokenException("Invalid page attestation response")
     }
     val challenge = response.getJSONObject("bgChallenge")
@@ -46,6 +44,53 @@ internal fun parsePageChallenge(html: String): PageChallenge {
         throw PoTokenException("Incomplete page attestation challenge")
     }
     return PageChallenge(configuration, challenge)
+}
+
+private fun parsePageObject(source: String): JSONObject {
+    val normalized = StringBuilder(source.length)
+    var quote: Char? = null
+    var index = 0
+    while (index < source.length) {
+        val character = source[index]
+        if (quote != null) {
+            if (character == '\\') {
+                val escaped = source.getOrNull(index + 1)
+                    ?: throw PoTokenException("Incomplete attestation string escape")
+                if (escaped == 'x') {
+                    val first = source.getOrNull(index + 2)
+                    val second = source.getOrNull(index + 3)
+                    if (first == null || second == null ||
+                        first.digitToIntOrNull(16) == null || second.digitToIntOrNull(16) == null
+                    ) {
+                        throw PoTokenException("Invalid attestation hexadecimal escape")
+                    }
+                    normalized.append("\\u00").append(first).append(second)
+                    index += 4
+                } else {
+                    normalized.append(character).append(escaped)
+                    index += 2
+                }
+                continue
+            }
+            if (character == quote) quote = null
+        } else {
+            when (character) {
+                '\'', '"' -> quote = character
+                ',' -> {
+                    var next = index + 1
+                    while (next < source.length && source[next].isWhitespace()) next++
+                    if (source.getOrNull(next) == '}' || source.getOrNull(next) == ']') {
+                        index++
+                        continue
+                    }
+                }
+            }
+        }
+        normalized.append(character)
+        index++
+    }
+    if (quote != null) throw PoTokenException("Unterminated attestation string")
+    return JSONObject(normalized.toString())
 }
 
 private fun extractPageObject(source: String, offset: Int): String {

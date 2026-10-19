@@ -676,6 +676,10 @@
     <string name="ai_provider_none">None (Disabled)</string>
     <string name="ai_provider_openrouter">OpenRouter</string>
     <string name="ai_custom_endpoint">Custom endpoint</string>
+    <string name="ai_custom_endpoint_invalid">Enter an HTTP or HTTPS endpoint without embedded credentials or a fragment.</string>
+    <string name="ai_request_parameters">Request parameters</string>
+    <string name="ai_request_parameters_desc">OpenAI-compatible JSON options, for example {\"reasoning_effort\":\"low\",\"max_completion_tokens\":8192,\"temperature\":null}. Use null to omit a parameter; leave blank for defaults.</string>
+    <string name="ai_request_parameters_invalid">Enter a JSON object with valid parameter values. Model, messages, stream, and n are managed by the app.</string>
     <string name="ai_api_key">API key</string>
     <string name="ai_api_key_missing">Required before AI features can run.</string>
     <string name="ai_api_key_configured">Configured</string>

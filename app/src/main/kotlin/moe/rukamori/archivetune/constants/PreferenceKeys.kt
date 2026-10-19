@@ -251,6 +251,7 @@ val AiApiValidationStatusKey = stringPreferencesKey("ai_api_validation_status")
 val AiSelectedModelKey = stringPreferencesKey("ai_selected_model")
 val AiCustomModelKey = stringPreferencesKey("ai_custom_model")
 val AiCustomPromptKey = stringPreferencesKey("ai_custom_prompt")
+val AiRequestParametersKey = stringPreferencesKey("ai_request_parameters")
 
 enum class AiProvider {
     CHATGPT,

@@ -51,8 +51,15 @@ class LyricsRenderViewModel
         private val _state = MutableStateFlow<LyricsRenderScreenState>(LyricsRenderScreenState.Loading)
         val state: StateFlow<LyricsRenderScreenState> = _state.asStateFlow()
 
+        private val _playbackPositionMs = MutableStateFlow(0L)
+        val playbackPositionMs: StateFlow<Long> = _playbackPositionMs.asStateFlow()
+
         private var observationJob: Job? = null
         private var binding: Binding? = null
+
+        fun onPlaybackPositionChanged(positionMs: Long) {
+            _playbackPositionMs.value = positionMs.coerceAtLeast(0L)
+        }
 
         fun bind(
             mediaId: String,

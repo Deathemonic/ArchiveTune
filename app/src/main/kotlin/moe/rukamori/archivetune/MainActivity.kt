@@ -34,6 +34,8 @@ import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
@@ -168,6 +170,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -2488,6 +2491,41 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
 
+                                val backEnterTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition =
+                                    remember(disableAnimations, navigationItems) {
+                                        {
+                                            if (disableAnimations) {
+                                                fadeIn(tween(0))
+                                            } else if ((
+                                                    navigationItems.fastAny { it.route == initialState.destination.route } ||
+                                                        initialState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true
+                                                ) &&
+                                                navigationItems.fastAny { it.route == targetState.destination.route }
+                                            ) {
+                                                fadeIn(tween(250))
+                                            } else {
+                                                slideInHorizontally(animationSpec = tween(250)) { -it }
+                                            }
+                                        }
+                                    }
+                                val backExitTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition =
+                                    remember(disableAnimations, navigationItems) {
+                                        {
+                                            if (disableAnimations) {
+                                                fadeOut(tween(0))
+                                            } else if ((
+                                                    navigationItems.fastAny { it.route == initialState.destination.route } ||
+                                                        initialState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true
+                                                ) &&
+                                                navigationItems.fastAny { it.route == targetState.destination.route }
+                                            ) {
+                                                fadeOut(tween(200))
+                                            } else {
+                                                slideOutHorizontally(animationSpec = tween(200)) { it }
+                                            }
+                                        }
+                                    }
+
                                 NavHost(
                                     navController = navController,
                                     startDestination =
@@ -2522,32 +2560,26 @@ class MainActivity : ComponentActivity() {
                                             fadeOut(tween(200)) + slideOutHorizontally(animationSpec = tween(200)) { -it }
                                         }
                                     },
-                                    popEnterTransition = {
-                                        if (disableAnimations) {
-                                            fadeIn(tween(0))
-                                        } else if ((
-                                                initialState.destination.route in topLevelScreens ||
-                                                    initialState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true
-                                            ) &&
-                                            targetState.destination.route in topLevelScreens
-                                        ) {
-                                            fadeIn(tween(250))
+                                    popEnterTransition = backEnterTransition,
+                                    popExitTransition = backExitTransition,
+                                    predictivePopEnterTransition = { _ ->
+                                        if (targetState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true) {
+                                            if (disableAnimations) {
+                                                fadeIn(tween(0))
+                                            } else if (initialState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true) {
+                                                fadeIn(tween(250))
+                                            } else {
+                                                fadeIn(tween(250)) + slideInHorizontally { -it / 2 }
+                                            }
                                         } else {
-                                            slideInHorizontally(animationSpec = tween(250)) { -it }
+                                            backEnterTransition()
                                         }
                                     },
-                                    popExitTransition = {
-                                        if (disableAnimations) {
-                                            fadeOut(tween(0))
-                                        } else if ((
-                                                initialState.destination.route in topLevelScreens ||
-                                                    initialState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true
-                                            ) &&
-                                            targetState.destination.route in topLevelScreens
-                                        ) {
-                                            fadeOut(tween(200))
+                                    predictivePopExitTransition = { _ ->
+                                        if (initialState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true) {
+                                            fadeOut(tween(if (disableAnimations) 0 else 200))
                                         } else {
-                                            slideOutHorizontally(animationSpec = tween(200)) { it }
+                                            backExitTransition()
                                         }
                                     },
                                     modifier =

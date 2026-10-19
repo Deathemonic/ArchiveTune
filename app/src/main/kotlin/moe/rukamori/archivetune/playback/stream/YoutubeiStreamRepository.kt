@@ -85,10 +85,10 @@ class YoutubeiStreamRepository
                                 cookie = authState.cookie.takeIf { authState.hasLoginCookie },
                                 visitorData = authState.visitorData,
                                 dataSyncId = authState.dataSyncId.takeIf { authState.hasLoginCookie },
-                                sessionPoToken = authState.poTokenGvsSession.takeIf { authState.hasLoginCookie },
+                                sessionPoToken = authState.poTokenGvsSession,
                                 videoPoToken =
                                     authState.poTokenGvs?.takeIf {
-                                        authState.hasLoginCookie && authState.poTokenGvsVideoId == request.mediaId
+                                        authState.poTokenGvsVideoId == request.mediaId
                                     },
                                 language = locale.hl,
                                 location = locale.gl,
@@ -115,7 +115,7 @@ class YoutubeiStreamRepository
                     ) {
                         throw YTPlayerUtils.BotDetectionPlaybackException(
                             videoId = request.mediaId,
-                            clients = setOf(if (authState.hasLoginCookie) "WEB_CREATOR" else "VISIONOS"),
+                            clients = setOf(if (authState.hasLoginCookie) "WEB_CREATOR" else "MWEB"),
                             cause = failure,
                         )
                     }
@@ -126,7 +126,7 @@ class YoutubeiStreamRepository
                             if (!authState.hasLoginCookie) {
                                 throw YTPlayerUtils.BadStreamPlayerResponseException(
                                     videoId = request.mediaId,
-                                    failedClients = setOf("VISIONOS"),
+                                    failedClients = setOf("MWEB"),
                                     cause = failure,
                                 )
                             }

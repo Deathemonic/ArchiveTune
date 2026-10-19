@@ -159,6 +159,7 @@ object YTPlayerUtils {
     private val streamUrlCache = ConcurrentHashMap<String, CachedStreamUrl>()
     private val playbackDataCache = ConcurrentHashMap<PlaybackDataCacheKey, CachedPlaybackData>()
     private val playbackDataResolutionMutexes = Array(PLAYBACK_DATA_RESOLUTION_MUTEX_COUNT) { Mutex() }
+    private val youtubeiVisitorMutex = Mutex()
     private val failedStreamClientsUntil = ConcurrentHashMap<String, Long>()
 
     @Volatile private var lastSuccessfulClientKey: String? = null
@@ -375,8 +376,28 @@ object YTPlayerUtils {
         videoId: String,
         authState: PlaybackAuthState = YouTube.currentPlaybackAuthState(),
     ): PlaybackAuthState {
-        if (!authState.hasLoginCookie) return authState
-        val contentBinding = authState.youtubeiContentBinding()
+        val resolvedAuthState =
+            if (!authState.hasLoginCookie && authState.visitorData.isNullOrBlank()) {
+                youtubeiVisitorMutex.withLock {
+                    val currentAuthState = YouTube.currentPlaybackAuthState()
+                    val visitorData =
+                        currentAuthState.visitorData
+                            ?.takeIf {
+                                it.isNotBlank() &&
+                                    authState.cookie == currentAuthState.cookie &&
+                                    authState.dataSyncId == currentAuthState.dataSyncId
+                            }
+                            ?: YouTube.visitorData().getOrThrow().trim().takeIf(String::isNotBlank)
+                            ?: throw IllegalStateException("YouTube returned empty playback visitor data")
+                    if (authState.hasSamePlaybackSession(YouTube.currentPlaybackAuthState())) {
+                        YouTube.visitorData = visitorData
+                    }
+                    authState.copy(visitorData = visitorData).normalized()
+                }
+            } else {
+                authState
+            }
+        val contentBinding = resolvedAuthState.youtubeiContentBinding()
             ?: throw InvalidPlaybackLoginContextException(
                 videoId = videoId,
                 targetUrl = "https://music.youtube.com/watch?v=$videoId",
@@ -387,7 +408,7 @@ object YTPlayerUtils {
                 videoId = videoId,
                 sessionId = contentBinding,
             )
-        return authState.withGeneratedPoTokens(videoId, tokenResult)
+        return resolvedAuthState.withGeneratedPoTokens(videoId, tokenResult)
     }
 
     suspend fun preWarmYoutubeiPoTokens(authState: PlaybackAuthState) {
@@ -434,6 +455,7 @@ object YTPlayerUtils {
             dataSyncId == other.dataSyncId
 
     private fun PlaybackAuthState.youtubeiContentBinding(): String? {
+        if (!hasLoginCookie) return visitorData?.trim()?.takeIf(String::isNotBlank)
         val normalizedDataSyncId = dataSyncId?.trim()?.takeIf(String::isNotBlank)
         if (normalizedDataSyncId != null) {
             return if ("||" in normalizedDataSyncId) {

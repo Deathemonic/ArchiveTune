@@ -139,6 +139,7 @@ import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
+import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -295,6 +296,7 @@ internal fun rememberDeviceMusicVolumeController(): DeviceMusicVolumeController 
 fun BottomSheetPlayer(
     state: BottomSheetState,
     navController: NavController,
+    hazeState: HazeState,
     modifier: Modifier = Modifier,
     pureBlack: Boolean,
     navigationProximityProvider: () -> Float = { 0f },
@@ -1174,6 +1176,7 @@ fun BottomSheetPlayer(
             MiniPlayer(
                 position = position,
                 duration = duration,
+                hazeState = hazeState,
                 pureBlack = pureBlack,
                 navigationProximityProvider = navigationProximityProvider,
             )

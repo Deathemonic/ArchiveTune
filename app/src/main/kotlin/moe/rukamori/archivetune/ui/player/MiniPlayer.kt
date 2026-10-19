@@ -42,6 +42,12 @@ import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.toBitmap
+import dev.chrisbanes.haze.HazeColorEffect
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.hazeBlur
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalPlayerConnection
@@ -64,6 +70,7 @@ private const val MiniPlayerPaletteCacheSize = 24
 fun MiniPlayer(
     position: Long,
     duration: Long,
+    hazeState: HazeState,
     modifier: Modifier = Modifier,
     pureBlack: Boolean,
     navigationProximityProvider: () -> Float = { 0f },
@@ -71,6 +78,7 @@ fun MiniPlayer(
     NewMiniPlayer(
         position = position,
         duration = duration,
+        hazeState = hazeState,
         modifier = modifier,
         pureBlack = pureBlack,
         navigationProximityProvider = navigationProximityProvider,
@@ -81,6 +89,7 @@ fun MiniPlayer(
 private fun NewMiniPlayer(
     position: Long,
     duration: Long,
+    hazeState: HazeState,
     modifier: Modifier = Modifier,
     pureBlack: Boolean,
     navigationProximityProvider: () -> Float,
@@ -107,7 +116,9 @@ private fun NewMiniPlayer(
             }
         }
     val fallbackColor = MaterialTheme.colorScheme.surface.toArgb()
-    val shouldUseArtworkBackground = miniPlayerBackgroundStyle != MiniPlayerBackgroundStyle.THEME
+    val shouldUseArtworkBackground =
+        miniPlayerBackgroundStyle == MiniPlayerBackgroundStyle.GRADIENT ||
+            miniPlayerBackgroundStyle == MiniPlayerBackgroundStyle.GLOW
 
     LaunchedEffect(
         mediaMetadata?.id,
@@ -160,7 +171,10 @@ private fun NewMiniPlayer(
                     palette = palette,
                     fallbackColor = fallbackColor,
                 )
-            }.getOrDefault(emptyList())
+            }.getOrElse { error ->
+                if (error is CancellationException) throw error
+                emptyList()
+            }
 
         if (extractedColors.isNotEmpty()) {
             gradientColorsCache[currentMetadata.id] = extractedColors
@@ -173,24 +187,26 @@ private fun NewMiniPlayer(
             MiniPlayerBackgroundPalette.from(gradientColors)
         }
     val effectiveBackgroundStyle =
-        if (shouldUseArtworkBackground && backgroundPalette != null) {
-            miniPlayerBackgroundStyle
-        } else {
+        if (shouldUseArtworkBackground && backgroundPalette == null) {
             MiniPlayerBackgroundStyle.THEME
+        } else {
+            miniPlayerBackgroundStyle
         }
 
     val contentColors =
         rememberMiniPlayerContentColors(
-            useArtworkBackground = effectiveBackgroundStyle != MiniPlayerBackgroundStyle.THEME,
+            useArtworkBackground = shouldUseArtworkBackground && backgroundPalette != null,
         )
     val proximity = navigationProximityProvider()
     val miniPlayerShape =
-        RoundedCornerShape(
-            topStart = lerp(FloatingBarStandaloneCornerRadius.value, FloatingBarOuterCornerRadius.value, proximity).dp,
-            topEnd = lerp(FloatingBarStandaloneCornerRadius.value, FloatingBarOuterCornerRadius.value, proximity).dp,
-            bottomStart = lerp(FloatingBarStandaloneCornerRadius.value, FloatingBarJunctionCornerRadius.value, proximity).dp,
-            bottomEnd = lerp(FloatingBarStandaloneCornerRadius.value, FloatingBarJunctionCornerRadius.value, proximity).dp,
-        )
+        remember(proximity) {
+            RoundedCornerShape(
+                topStart = lerp(FloatingBarStandaloneCornerRadius.value, FloatingBarOuterCornerRadius.value, proximity).dp,
+                topEnd = lerp(FloatingBarStandaloneCornerRadius.value, FloatingBarOuterCornerRadius.value, proximity).dp,
+                bottomStart = lerp(FloatingBarStandaloneCornerRadius.value, FloatingBarJunctionCornerRadius.value, proximity).dp,
+                bottomEnd = lerp(FloatingBarStandaloneCornerRadius.value, FloatingBarJunctionCornerRadius.value, proximity).dp,
+            )
+        }
     val constrainToNavigationWidth by remember {
         derivedStateOf { navigationProximityProvider() > 0f }
     }
@@ -217,6 +233,8 @@ private fun NewMiniPlayer(
             MiniPlayerBackground(
                 style = effectiveBackgroundStyle,
                 palette = backgroundPalette,
+                hazeState = hazeState,
+                pureBlack = pureBlack,
                 modifier = Modifier.fillMaxSize(),
             )
             NewMiniPlayerContent(
@@ -285,12 +303,41 @@ private fun rememberMiniPlayerContentColors(useArtworkBackground: Boolean): Mini
 private fun MiniPlayerBackground(
     style: MiniPlayerBackgroundStyle,
     palette: MiniPlayerBackgroundPalette?,
+    hazeState: HazeState,
+    pureBlack: Boolean,
     modifier: Modifier = Modifier,
 ) {
     when (style) {
         MiniPlayerBackgroundStyle.THEME -> {
             Box(
                 modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            )
+        }
+
+        MiniPlayerBackgroundStyle.ACRYLIC,
+        MiniPlayerBackgroundStyle.BLUR -> {
+            val surfaceColor = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+            val hazeInput = remember(hazeState) { HazeInput.Sources(hazeState) }
+            val blurStyle = remember(style, surfaceColor) {
+                val isAcrylic = style == MiniPlayerBackgroundStyle.ACRYLIC
+                HazeBlurStyle {
+                    backgroundColor(surfaceColor)
+                    blurRadius(if (isAcrylic) 32.dp else 20.dp)
+                    noiseFactor(if (isAcrylic) 0.12f else 0f)
+                    colorEffects(
+                        listOf(
+                            HazeColorEffect.tint(surfaceColor.copy(alpha = if (isAcrylic) 0.72f else 0.62f)),
+                        ),
+                    )
+                    fallbackColorEffect(HazeColorEffect.tint(surfaceColor))
+                }
+            }
+            Box(
+                modifier = modifier.hazeBlur(
+                    input = hazeInput,
+                    style = blurStyle,
+                    expandLayerBounds = true,
+                ),
             )
         }
 

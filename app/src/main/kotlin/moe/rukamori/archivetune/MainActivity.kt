@@ -1005,6 +1005,7 @@ class MainActivity : ComponentActivity() {
                     val menuProfileState by mainMenuViewModel.profileState.collectAsStateWithLifecycle()
                     val menuAccountImageUrl by homeViewModel.accountImageUrl.collectAsStateWithLifecycle()
                     val menuHazeState = rememberHazeState()
+                    val miniPlayerHazeState = rememberHazeState()
                     val menuLifecycleOwner = LocalLifecycleOwner.current
                     LaunchedEffect(mainMenuViewModel, navController, menuLifecycleOwner) {
                         menuLifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -2211,6 +2212,7 @@ class MainActivity : ComponentActivity() {
                                                     modifier =
                                                         Modifier
                                                             .fillMaxSize()
+                                                            .hazeSource(miniPlayerHazeState, zIndex = 1f)
                                                             .padding(
                                                                 bottom = if (!playerBottomSheetState.isDismissed) MiniPlayerHeight else 0.dp,
                                                             ).navigationBarsPadding(),
@@ -2279,6 +2281,7 @@ class MainActivity : ComponentActivity() {
                                                 BottomSheetPlayer(
                                                     state = playerBottomSheetState,
                                                     navController = navController,
+                                                    hazeState = miniPlayerHazeState,
                                                     pureBlack = pureBlack,
                                                     navigationProximityProvider = navigationProximityProvider,
                                                 )
@@ -2601,6 +2604,7 @@ class MainActivity : ComponentActivity() {
                                         },
                                         modifier =
                                             Modifier
+                                                .hazeSource(miniPlayerHazeState)
                                                 .then(
                                                     if (isTvDevice) {
                                                         Modifier

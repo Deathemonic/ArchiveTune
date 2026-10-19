@@ -846,6 +846,8 @@ fun AppearanceSettings(navController: NavController) {
                                 MiniPlayerBackgroundStyle.THEME -> stringResource(R.string.follow_theme)
                                 MiniPlayerBackgroundStyle.GRADIENT -> stringResource(R.string.gradient)
                                 MiniPlayerBackgroundStyle.GLOW -> stringResource(R.string.glow)
+                                MiniPlayerBackgroundStyle.ACRYLIC -> stringResource(R.string.acrylic)
+                                MiniPlayerBackgroundStyle.BLUR -> stringResource(R.string.blur)
                             }
                         },
                     )

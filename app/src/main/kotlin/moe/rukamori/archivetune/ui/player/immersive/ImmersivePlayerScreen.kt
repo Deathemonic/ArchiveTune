@@ -47,6 +47,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
@@ -228,6 +229,7 @@ private fun ImmersivePortrait(
                 isPlaying = model.isPlaying,
                 artWidth = maxWidth,
                 artHeight = stageHeight,
+                backdropOffsetY = stageHeight,
                 disableBlur = disableBlur,
                 backdropBlurAmount = backdropBlurAmount,
             )
@@ -377,6 +379,7 @@ private fun ImmersiveBackdrop(
     artHeight: Dp,
     disableBlur: Boolean,
     backdropBlurAmount: Int,
+    backdropOffsetY: Dp = 0.dp,
 ) {
     val hazeState = rememberHazeState()
     val artworkRequest = rememberOfflineArtworkImageRequest(artworkUrl)
@@ -411,11 +414,12 @@ private fun ImmersiveBackdrop(
 
     Box(modifier = Modifier.fillMaxSize()) {
         val rotatedBackdropModifier =
-            remember {
+            remember(backdropOffsetY) {
                 Modifier
                     .fillMaxSize()
                     .graphicsLayer {
                         rotationZ = 180f
+                        translationY = backdropOffsetY.toPx()
                     }
             }
         val stageFadeMask =
@@ -434,6 +438,7 @@ private fun ImmersiveBackdrop(
             modifier =
                 Modifier
                     .fillMaxSize()
+                    .clipToBounds()
                     .hazeSource(hazeState),
         ) {
             if (canvasFrame != null && canvas != null) {
@@ -441,7 +446,16 @@ private fun ImmersiveBackdrop(
                     bitmap = canvasFrame,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = rotatedBackdropModifier,
+                )
+                Image(
+                    bitmap = canvasFrame,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier =
+                        Modifier
+                            .size(width = artWidth, height = artHeight)
+                            .align(Alignment.TopStart),
                 )
             } else {
                 AsyncImage(

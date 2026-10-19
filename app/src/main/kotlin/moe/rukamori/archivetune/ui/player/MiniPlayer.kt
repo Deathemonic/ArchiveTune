@@ -42,11 +42,7 @@ import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.toBitmap
-import dev.chrisbanes.haze.HazeColorEffect
-import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.blur.HazeBlurStyle
-import dev.chrisbanes.haze.blur.hazeBlur
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -59,6 +55,7 @@ import moe.rukamori.archivetune.constants.FloatingBarStandaloneCornerRadius
 import moe.rukamori.archivetune.constants.MiniPlayerHeight
 import moe.rukamori.archivetune.constants.NavigationBarMaxWidth
 import moe.rukamori.archivetune.constants.SwipeSensitivityKey
+import moe.rukamori.archivetune.ui.component.FloatingBarBlurBackground
 import moe.rukamori.archivetune.ui.theme.PlayerColorExtractor
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
@@ -316,28 +313,11 @@ private fun MiniPlayerBackground(
 
         MiniPlayerBackgroundStyle.ACRYLIC,
         MiniPlayerBackgroundStyle.BLUR -> {
-            val surfaceColor = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
-            val hazeInput = remember(hazeState) { HazeInput.Sources(hazeState) }
-            val blurStyle = remember(style, surfaceColor) {
-                val isAcrylic = style == MiniPlayerBackgroundStyle.ACRYLIC
-                HazeBlurStyle {
-                    backgroundColor(surfaceColor)
-                    blurRadius(if (isAcrylic) 32.dp else 20.dp)
-                    noiseFactor(if (isAcrylic) 0.12f else 0f)
-                    colorEffects(
-                        listOf(
-                            HazeColorEffect.tint(surfaceColor.copy(alpha = if (isAcrylic) 0.72f else 0.62f)),
-                        ),
-                    )
-                    fallbackColorEffect(HazeColorEffect.tint(surfaceColor))
-                }
-            }
-            Box(
-                modifier = modifier.hazeBlur(
-                    input = hazeInput,
-                    style = blurStyle,
-                    expandLayerBounds = true,
-                ),
+            FloatingBarBlurBackground(
+                hazeState = hazeState,
+                isAcrylic = style == MiniPlayerBackgroundStyle.ACRYLIC,
+                pureBlack = pureBlack,
+                modifier = modifier,
             )
         }
 

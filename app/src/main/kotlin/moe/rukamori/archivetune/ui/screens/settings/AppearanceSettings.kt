@@ -95,6 +95,8 @@ import moe.rukamori.archivetune.constants.LyricsBackgroundStyle
 import moe.rukamori.archivetune.constants.LyricsBackgroundStyleKey
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyleKey
+import moe.rukamori.archivetune.constants.NavigationBarBackgroundStyle
+import moe.rukamori.archivetune.constants.NavigationBarBackgroundStyleKey
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyleKey
 import moe.rukamori.archivetune.constants.PlayerButtonsStyle
@@ -210,6 +212,11 @@ fun AppearanceSettings(navController: NavController) {
             defaultValue = MiniPlayerBackgroundStyle.THEME,
         )
     val (pureBlack, onPureBlackChange) = rememberPreference(PureBlackKey, defaultValue = false)
+    val (navigationBarBackground, onNavigationBarBackgroundChange) =
+        rememberEnumPreference(
+            NavigationBarBackgroundStyleKey,
+            defaultValue = NavigationBarBackgroundStyle.THEME,
+        )
     val (disableBlur, onDisableBlurChange) = rememberPreference(DisableBlurKey, defaultValue = false)
     val (disableAnimations, onDisableAnimationsChange) =
         rememberPreference(
@@ -690,6 +697,22 @@ fun AppearanceSettings(navController: NavController) {
                                 enabled = backdropEnabled,
                                 modifier = Modifier.fillMaxWidth(),
                             )
+                        },
+                    )
+                }
+
+                item {
+                    EnumListPreference(
+                        title = { Text(stringResource(R.string.navigation_bar_background_style)) },
+                        icon = { Icon(painterResource(R.drawable.gradient), null) },
+                        selectedValue = navigationBarBackground,
+                        onValueSelected = onNavigationBarBackgroundChange,
+                        valueText = {
+                            when (it) {
+                                NavigationBarBackgroundStyle.THEME -> stringResource(R.string.follow_theme)
+                                NavigationBarBackgroundStyle.BLUR -> stringResource(R.string.blur)
+                                NavigationBarBackgroundStyle.ACRYLIC -> stringResource(R.string.acrylic)
+                            }
                         },
                     )
                 }

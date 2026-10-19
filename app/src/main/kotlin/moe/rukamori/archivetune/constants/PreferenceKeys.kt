@@ -100,6 +100,7 @@ val BackdropEnabledKey = booleanPreferencesKey("backdropEnabled")
 val BackdropBlurAmountKey = intPreferencesKey("backdropBlurAmount")
 val MiniPlayerLastAnchorKey = intPreferencesKey("miniPlayerLastAnchor")
 val MiniPlayerBackgroundStyleKey = stringPreferencesKey("miniPlayerBackgroundStyle")
+val NavigationBarBackgroundStyleKey = stringPreferencesKey("navigationBarBackgroundStyle")
 
 enum class AodThumbnailShape {
     ROUNDED,
@@ -702,6 +703,12 @@ enum class MiniPlayerBackgroundStyle {
     GLOW,
     ACRYLIC,
     BLUR,
+}
+
+enum class NavigationBarBackgroundStyle {
+    THEME,
+    BLUR,
+    ACRYLIC,
 }
 
 // Keys for customized background

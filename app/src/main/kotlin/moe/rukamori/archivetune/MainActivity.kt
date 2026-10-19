@@ -220,6 +220,8 @@ import moe.rukamori.archivetune.constants.MiniPlayerBottomSpacing
 import moe.rukamori.archivetune.constants.MiniPlayerHeight
 import moe.rukamori.archivetune.constants.MiniPlayerLastAnchorKey
 import moe.rukamori.archivetune.constants.NavigationBarAnimationSpec
+import moe.rukamori.archivetune.constants.NavigationBarBackgroundStyle
+import moe.rukamori.archivetune.constants.NavigationBarBackgroundStyleKey
 import moe.rukamori.archivetune.constants.NavigationBarBottomPadding
 import moe.rukamori.archivetune.constants.NavigationBarHeight
 import moe.rukamori.archivetune.constants.NavigationBarHorizontalPadding
@@ -1005,7 +1007,11 @@ class MainActivity : ComponentActivity() {
                     val menuProfileState by mainMenuViewModel.profileState.collectAsStateWithLifecycle()
                     val menuAccountImageUrl by homeViewModel.accountImageUrl.collectAsStateWithLifecycle()
                     val menuHazeState = rememberHazeState()
-                    val miniPlayerHazeState = rememberHazeState()
+                    val floatingBarsHazeState = rememberHazeState()
+                    val navigationBarBackgroundStyle by rememberEnumPreference(
+                        key = NavigationBarBackgroundStyleKey,
+                        defaultValue = NavigationBarBackgroundStyle.THEME,
+                    )
                     val menuLifecycleOwner = LocalLifecycleOwner.current
                     LaunchedEffect(mainMenuViewModel, navController, menuLifecycleOwner) {
                         menuLifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -2212,7 +2218,7 @@ class MainActivity : ComponentActivity() {
                                                     modifier =
                                                         Modifier
                                                             .fillMaxSize()
-                                                            .hazeSource(miniPlayerHazeState, zIndex = 1f)
+                                                            .hazeSource(floatingBarsHazeState, zIndex = 1f)
                                                             .padding(
                                                                 bottom = if (!playerBottomSheetState.isDismissed) MiniPlayerHeight else 0.dp,
                                                             ).navigationBarsPadding(),
@@ -2281,7 +2287,7 @@ class MainActivity : ComponentActivity() {
                                                 BottomSheetPlayer(
                                                     state = playerBottomSheetState,
                                                     navController = navController,
-                                                    hazeState = miniPlayerHazeState,
+                                                    hazeState = floatingBarsHazeState,
                                                     pureBlack = pureBlack,
                                                     navigationProximityProvider = navigationProximityProvider,
                                                 )
@@ -2327,6 +2333,8 @@ class MainActivity : ComponentActivity() {
                                                 FloatingNavigationToolbar(
                                                     items = navigationItems,
                                                     pureBlack = pureBlack,
+                                                    backgroundStyle = navigationBarBackgroundStyle,
+                                                    hazeState = floatingBarsHazeState,
                                                     miniPlayerProximityProvider = navigationProximityProvider,
                                                     modifier =
                                                         Modifier
@@ -2604,7 +2612,7 @@ class MainActivity : ComponentActivity() {
                                         },
                                         modifier =
                                             Modifier
-                                                .hazeSource(miniPlayerHazeState)
+                                                .hazeSource(floatingBarsHazeState)
                                                 .then(
                                                     if (isTvDevice) {
                                                         Modifier

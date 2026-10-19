@@ -1245,7 +1245,7 @@ class MainActivity : ComponentActivity() {
                         setSystemBarAppearance(isDarkStatusBar)
                     }
 
-                    val miniPlayerAnchor by remember {
+                    val miniPlayerAnchor by remember(playerBottomSheetState) {
                         derivedStateOf {
                             when {
                                 playerBottomSheetState.isExpanded -> EXPANDED_ANCHOR
@@ -1504,7 +1504,7 @@ class MainActivity : ComponentActivity() {
 
                     var restoredMiniPlayerAnchor by remember(playerConnection) { mutableStateOf(false) }
 
-                    LaunchedEffect(playerConnection, savedMiniPlayerAnchor, isYearInMusicScreen) {
+                    LaunchedEffect(playerConnection, savedMiniPlayerAnchor, isYearInMusicScreen, playerBottomSheetState) {
                         if (restoredMiniPlayerAnchor) return@LaunchedEffect
                         val connection = playerConnection ?: return@LaunchedEffect
                         connection.queueRestoreCompleted.first { it }

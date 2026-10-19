@@ -296,7 +296,7 @@ private fun MiniPlayerBackground(
 
         MiniPlayerBackgroundStyle.GRADIENT -> {
             val colors = requireNotNull(palette)
-            Box(modifier = modifier) {
+            Box(modifier = modifier.background(Color.Black)) {
                 Box(
                     modifier =
                         Modifier

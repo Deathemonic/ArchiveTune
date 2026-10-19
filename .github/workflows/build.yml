@@ -1,0 +1,160 @@
+name: Build APK
+run-name: Build ${{ inputs.build_ref || inputs.build_branch || 'dev' }} · ${{ inputs.build_all && 'all variants' || format('{0} · {1} · {2}', inputs.distribution || 'foss', inputs.abi || 'arm64', inputs.build_type || 'debug') }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_branch:
+        description: Source branch to build
+        required: true
+        default: dev
+        type: string
+      build_ref:
+        description: Optional branch, tag, or commit override
+        required: false
+        type: string
+      build_all:
+        description: Build all types, distributions, and architectures
+        type: boolean
+        default: false
+      build_type:
+        description: Build type
+        default: debug
+        type: choice
+        options:
+          - debug
+          - release
+      distribution:
+        description: Distribution
+        default: foss
+        type: choice
+        options:
+          - foss
+          - gms
+      abi:
+        description: Architecture
+        default: arm64
+        type: choice
+        options:
+          - arm64
+          - universal
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ inputs.build_all && 'all' || 'selected' }}-${{ github.event_name }}-${{ inputs.build_ref || inputs.build_branch || 'dev' }}-${{ inputs.distribution || 'foss' }}-${{ inputs.abi || 'arm64' }}-${{ inputs.build_type || 'debug' }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.distribution }} · ${{ matrix.abi }} · ${{ matrix.build_type }}
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: ${{ fromJSON(inputs.build_all && '["debug","release"]' || format('["{0}"]', inputs.build_type || 'debug')) }}
+        distribution: ${{ fromJSON(inputs.build_all && '["foss","gms"]' || format('["{0}"]', inputs.distribution || 'foss')) }}
+        abi: ${{ fromJSON(inputs.build_all && '["arm64","universal"]' || format('["{0}"]', inputs.abi || 'arm64')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DISTRIBUTION: ${{ matrix.distribution }}
+      ABI: ${{ matrix.abi }}
+      BUILD_TYPE: ${{ matrix.build_type }}
+      GITHUB_OWNER: ${{ github.repository_owner }}
+      GITHUB_REPO: ${{ github.event.repository.name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.build_ref || inputs.build_branch || 'dev' }}
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android build tools
+        run: sdkmanager "platforms;android-37.2" "build-tools;37.0.0" "ndk;30.0.16248370" "cmake;3.22.1"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+          cache-cleanup: on-success
+
+      - name: Resolve variant
+        id: variant
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$DISTRIBUTION" in
+            foss) distribution=Foss ;;
+            gms) distribution=Gms ;;
+            *) echo "Unsupported distribution: $DISTRIBUTION" >&2; exit 1 ;;
+          esac
+          case "$ABI" in
+            arm64) abi=Arm64 ;;
+            universal) abi=Universal ;;
+            *) echo "Unsupported architecture: $ABI" >&2; exit 1 ;;
+          esac
+          case "$BUILD_TYPE" in
+            debug) build_type=Debug ;;
+            release) build_type=Release ;;
+            *) echo "Unsupported build type: $BUILD_TYPE" >&2; exit 1 ;;
+          esac
+          echo "name=${distribution}Mobile${abi}${build_type}" >> "$GITHUB_OUTPUT"
+          echo "artifact=archivetune-${DISTRIBUTION}-mobile-${ABI}-${BUILD_TYPE}" >> "$GITHUB_OUTPUT"
+          echo "Building $(git rev-parse HEAD)"
+
+      - name: Restore test signing key
+        run: |
+          mkdir -p "$HOME/.android"
+          cp app/persistent-debug.keystore "$HOME/.android/debug.keystore"
+          if [ "$BUILD_TYPE" = release ]; then
+            mkdir -p app/keystore
+            cp app/persistent-debug.keystore app/keystore/release.keystore
+            echo "STORE_PASSWORD=android" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=androiddebugkey" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=android" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build APK
+        env:
+          VARIANT: ${{ steps.variant.outputs.name }}
+        run: |
+          tasks=(":app:assemble${VARIANT}")
+          if [ "$BUILD_TYPE" = debug ]; then
+            tasks=(":app:test${VARIANT}UnitTest" "${tasks[@]}")
+          fi
+          ./gradlew --console=plain --max-workers=1 \
+            -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" \
+            -Pkotlin.daemon.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=768m" \
+            "${tasks[@]}"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.variant.outputs.artifact }}
+          path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload test reports
+        if: ${{ always() && matrix.build_type == 'debug' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-${{ matrix.distribution }}-${{ matrix.abi }}-${{ matrix.build_type }}
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 14

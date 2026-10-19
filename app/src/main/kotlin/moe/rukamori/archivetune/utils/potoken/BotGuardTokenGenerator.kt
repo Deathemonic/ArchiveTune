@@ -34,9 +34,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Headers.Companion.toHeaders
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import org.json.JSONArray
+import org.json.JSONObject
 import timber.log.Timber
 import java.io.IOException
 import java.net.SocketTimeoutException
@@ -75,7 +78,7 @@ import kotlin.coroutines.resumeWithException
  */
 object BotGuardTokenGenerator {
     private const val TAG = "BotGuardTokenGen"
-    private const val CREATE_URL = "https://www.youtube.com/api/jnn/v1/Create"
+    private const val CHALLENGE_PAGE_URL = "https://www.youtube.com/?hl=en"
     private const val GENERATE_IT_URL = "https://www.youtube.com/api/jnn/v1/GenerateIT"
     private const val REQUEST_KEY = "O43z0dpjhgX20SCx4KAo"
     private const val API_KEY = "AIzaSyDyT5W0Jh49F30Pqqtyfdf7pDLFKLJoAnw"
@@ -467,23 +470,44 @@ object BotGuardTokenGenerator {
         @JavascriptInterface
         fun onPageLoaded() {
             dispatchBridgeCallback {
-                Timber.tag(TAG).d("Page loaded — requesting challenge from Create")
-                postToBotGuard(CREATE_URL, "[ \"$REQUEST_KEY\" ]") { body ->
-                    val challengeJson = parseCreateChallenge(body)
-                    webView.evaluateJavascript(
-                        """
-                        try {
-                            var data = $challengeJson;
-                            runBotGuard(data).then(function(r) {
-                                this.webPoSignalOutput = r.webPoSignalOutput;
-                                $JS_BRIDGE.onBotGuardReady(r.botguardResponse);
-                            }, function(e) {
-                                $JS_BRIDGE.onFatalError(e + "\n" + e.stack);
-                            });
-                        } catch(e) { $JS_BRIDGE.onFatalError(e + "\n" + e.stack); }
-                        """.trimIndent(),
-                        null,
-                    )
+                Timber.tag(TAG).d("Page loaded — requesting page-bound attestation challenge")
+                requestBotGuard(CHALLENGE_PAGE_URL) { body ->
+                    val page = withContext(Dispatchers.Default) { parsePageChallenge(body) }
+                    val interpreterUrl = page.challenge
+                        .getJSONObject("interpreterUrl")
+                        .getString("privateDoNotAccessOrElseTrustedResourceUrlWrappedValue")
+                        .let { if (it.startsWith("//")) "https:$it" else it }
+                        .toHttpUrlOrNull()
+                        ?: throw PoTokenException("Invalid BotGuard interpreter URL")
+                    if (!interpreterUrl.isHttps ||
+                        !(interpreterUrl.host == "www.youtube.com" ||
+                            interpreterUrl.host == "www.google.com" ||
+                            interpreterUrl.host == "www.gstatic.com")
+                    ) {
+                        throw PoTokenException("Unsupported BotGuard interpreter origin")
+                    }
+                    requestBotGuard(interpreterUrl.toString()) { interpreter ->
+                        if (interpreter.isBlank()) throw PoTokenException("Empty BotGuard interpreter")
+                        page.challenge.put(
+                            "interpreterJavascript",
+                            JSONObject().put("privateDoNotAccessOrElseSafeScriptWrappedValue", interpreter),
+                        )
+                        webView.evaluateJavascript(
+                            """
+                            try {
+                                globalThis.yt = { config_: ${page.configuration} };
+                                var data = ${page.challenge};
+                                runBotGuard(data).then(function(r) {
+                                    this.webPoSignalOutput = r.webPoSignalOutput;
+                                    $JS_BRIDGE.onBotGuardReady(r.botguardResponse);
+                                }, function(e) {
+                                    $JS_BRIDGE.onFatalError(e + "\n" + e.stack);
+                                });
+                            } catch(e) { $JS_BRIDGE.onFatalError(e + "\n" + e.stack); }
+                            """.trimIndent(),
+                            null,
+                        )
+                    }
                 }
             }
         }
@@ -492,7 +516,7 @@ object BotGuardTokenGenerator {
         fun onBotGuardReady(botguardResponse: String) {
             dispatchBridgeCallback {
                 Timber.tag(TAG).d("BotGuard executed — requesting integrity token from GenerateIT")
-                postToBotGuard(GENERATE_IT_URL, "[ \"$REQUEST_KEY\", \"$botguardResponse\" ]") { body ->
+                requestBotGuard(GENERATE_IT_URL, JSONArray().put(REQUEST_KEY).put(botguardResponse).toString()) { body ->
                     try {
                         val (tokenU8, lifetimeSec) = parseIntegrityToken(body)
                         expiry = Instant.now().plusSeconds(lifetimeSec).minus(10, ChronoUnit.MINUTES)
@@ -619,25 +643,30 @@ object BotGuardTokenGenerator {
             readySignal.resumeWithException(error)
         }
 
-        private fun postToBotGuard(
+        private fun requestBotGuard(
             url: String,
-            jsonBody: String,
-            onSuccess: (String) -> Unit,
+            jsonBody: String? = null,
+            onSuccess: suspend (String) -> Unit,
         ) {
             scope.launch(exceptionHandler) {
                 val request =
                     okhttp3.Request
                         .Builder()
                         .url(url)
-                        .post(jsonBody.toRequestBody())
+                        .apply {
+                            if (jsonBody != null) post(jsonBody.toRequestBody())
+                        }
                         .headers(
-                            mapOf(
-                                "User-Agent" to WV_USER_AGENT,
-                                "Accept" to "application/json",
-                                "Content-Type" to "application/json+protobuf",
-                                "x-goog-api-key" to API_KEY,
-                                "x-user-agent" to "grpc-web-javascript/0.1",
-                            ).toHeaders(),
+                            buildMap {
+                                put("User-Agent", WV_USER_AGENT)
+                                put("Accept", "*/*")
+                                put("Accept-Language", "en-US,en;q=0.7")
+                                if (jsonBody != null) {
+                                    put("Content-Type", "application/json+protobuf")
+                                    put("x-goog-api-key", API_KEY)
+                                    put("x-user-agent", "grpc-web-javascript/0.1")
+                                }
+                            }.toHeaders(),
                         ).build()
 
                 val body = suspendCancellableCoroutine<String> { continuation ->

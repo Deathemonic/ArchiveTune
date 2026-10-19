@@ -31,10 +31,15 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.Headers.Companion.toHeaders
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import timber.log.Timber
+import java.io.IOException
+import java.net.SocketTimeoutException
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.Collections
@@ -95,6 +100,7 @@ object BotGuardTokenGenerator {
 
     // ── state ────────────────────────────────────────────────────────
     private var appContext: Context? = null
+    @Volatile
     private var permanentlyBroken = false
 
     private val mutex = Mutex()
@@ -179,6 +185,20 @@ object BotGuardTokenGenerator {
         }
     }
 
+    suspend fun mintRequiredToken(
+        videoId: String,
+        sessionId: String,
+    ): PoTokenResult {
+        val ctx = appContext ?: throw PoTokenException("Token generator is not initialized")
+        if (permanentlyBroken) throw BrokenWebViewException("Token generation requires a usable system WebView")
+        require(videoId.isNotBlank() && sessionId.isNotBlank())
+        return withTimeoutOrNull(COLD_START_TIMEOUT_MS * 2L) {
+            mutex.withLock {
+                mintTokenOrThrowLocked(ctx, videoId, sessionId)
+            }
+        } ?: throw SocketTimeoutException("Timed out waiting for the playback token engine")
+    }
+
     suspend fun mintToken(
         videoId: String,
         sessionId: String,
@@ -259,7 +279,6 @@ object BotGuardTokenGenerator {
         getOrCreateEngine(
             ctx = ctx,
             sessionId = sessionId,
-            forceNewEngine = false,
         )
     }
 
@@ -267,34 +286,13 @@ object BotGuardTokenGenerator {
         ctx: Context,
         videoId: String,
         sessionId: String,
-        forceNewEngine: Boolean,
     ): PoTokenResult {
-        val (eng, sessionTok, wasNew) =
+        val (eng, sessionTok) =
             getOrCreateEngineLocked(
                 ctx = ctx,
                 sessionId = sessionId,
-                forceNewEngine = forceNewEngine,
             )
-
-        val playerTok =
-            try {
-                eng.mint(videoId)
-            } catch (e: Throwable) {
-                if (e is CancellationException) throw e
-                if (wasNew) throw e
-                Timber.tag(TAG).w(e, "mint failed, retrying with fresh engine")
-                val (freshEngine, freshSessionToken) =
-                    getOrCreateEngineLocked(
-                        ctx = ctx,
-                        sessionId = sessionId,
-                        forceNewEngine = true,
-                    )
-                return PoTokenResult(
-                    playerToken = freshEngine.mint(videoId),
-                    sessionToken = freshSessionToken,
-                )
-            }
-
+        val playerTok = eng.mint(videoId)
         return PoTokenResult(playerToken = playerTok, sessionToken = sessionTok)
     }
 
@@ -303,7 +301,23 @@ object BotGuardTokenGenerator {
         videoId: String,
         sessionId: String,
         maximumOperationMillis: Long? = null,
-    ): PoTokenResult? {
+    ): PoTokenResult? =
+        try {
+            mintTokenOrThrowLocked(ctx, videoId, sessionId, maximumOperationMillis)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            Timber.tag(TAG).e(failure, "Token generation failed")
+            null
+        }
+
+    private suspend fun mintTokenOrThrowLocked(
+        ctx: Context,
+        videoId: String,
+        sessionId: String,
+        maximumOperationMillis: Long? = null,
+    ): PoTokenResult {
+        if (permanentlyBroken) throw BrokenWebViewException("Token generation requires a usable system WebView")
         if (isEngineReadyForSession(sessionId)) {
             val cachedPlayer = playerTokenCache[videoId]
             val sessionToken = cachedSessionToken
@@ -325,36 +339,20 @@ object BotGuardTokenGenerator {
         val timeout =
             maximumOperationMillis?.let { minOf(defaultTimeout, it) }
                 ?: defaultTimeout
-        var operationStarted = false
-
         return try {
             withTimeoutOrNull(timeout) {
-                operationStarted = true
                 mintTokenInternalLocked(
                     ctx = ctx,
                     videoId = videoId,
                     sessionId = sessionId,
-                    forceNewEngine = false,
                 ).also { result ->
                     playerTokenCache[videoId] = result.playerToken
                 }
-            } ?: run {
-                Timber.tag(TAG).w("Timed out after ${timeout}ms — proceeding without PoToken")
-                resetEngineAfterInterruptedMint()
-                null
-            }
-        } catch (cancellation: CancellationException) {
-            if (operationStarted) {
-                resetEngineAfterInterruptedMint()
-            }
-            throw cancellation
-        } catch (e: BrokenWebViewException) {
-            Timber.tag(TAG).e(e, "Permanently broken WebView")
-            permanentlyBroken = true
-            null
-        } catch (e: Exception) {
-            Timber.tag(TAG).e(e, "mintToken failed: ${e.message}")
-            null
+            } ?: throw SocketTimeoutException("Playback token generation timed out after ${timeout}ms")
+        } catch (failure: Exception) {
+            resetEngineAfterInterruptedMint()
+            if (failure is BrokenWebViewException) permanentlyBroken = true
+            throw failure
         }
     }
 
@@ -367,22 +365,19 @@ object BotGuardTokenGenerator {
     private suspend fun getOrCreateEngine(
         ctx: Context,
         sessionId: String,
-        forceNewEngine: Boolean,
-    ): Triple<BotGuardEngine, String, Boolean> =
+    ): Pair<BotGuardEngine, String> =
         mutex.withLock {
             getOrCreateEngineLocked(
                 ctx = ctx,
                 sessionId = sessionId,
-                forceNewEngine = forceNewEngine,
             )
         }
 
     private suspend fun getOrCreateEngineLocked(
         ctx: Context,
         sessionId: String,
-        forceNewEngine: Boolean,
-    ): Triple<BotGuardEngine, String, Boolean> {
-        val needsNew = forceNewEngine || !isEngineReadyForSession(sessionId)
+    ): Pair<BotGuardEngine, String> {
+        val needsNew = !isEngineReadyForSession(sessionId)
         if (needsNew) {
             withContext(Dispatchers.Main) {
                 engine?.close()
@@ -409,10 +404,9 @@ object BotGuardTokenGenerator {
             engineReady = true
         }
 
-        return Triple(
+        return Pair(
             requireNotNull(engine),
             requireNotNull(cachedSessionToken),
-            needsNew,
         )
     }
 
@@ -448,7 +442,7 @@ object BotGuardTokenGenerator {
             )
         private lateinit var expiry: Instant
 
-        val isExpired: Boolean get() = Instant.now().isAfter(expiry)
+        val isExpired: Boolean get() = closed.get() || !Instant.now().isBefore(expiry)
 
         fun startBootstrap() {
             scope.launch(exceptionHandler) {
@@ -646,17 +640,30 @@ object BotGuardTokenGenerator {
                             ).toHeaders(),
                         ).build()
 
-                val response =
-                    withContext(Dispatchers.IO) {
-                        httpClient.newCall(request).execute()
-                    }
+                val body = suspendCancellableCoroutine<String> { continuation ->
+                    val call = httpClient.newCall(request)
+                    continuation.invokeOnCancellation { call.cancel() }
+                    call.enqueue(
+                        object : Callback {
+                            override fun onFailure(call: Call, e: IOException) {
+                                if (continuation.isActive) continuation.resumeWithException(e)
+                            }
 
-                if (response.code != 200) {
-                    signalError(PoTokenException("BotGuard HTTP ${response.code} from $url"))
-                } else {
-                    val body = withContext(Dispatchers.IO) { response.body!!.string() }
-                    onSuccess(body)
+                            override fun onResponse(call: Call, response: Response) {
+                                val result = runCatching {
+                                    response.use {
+                                        if (it.code != 200) {
+                                            throw PoTokenException("BotGuard HTTP ${it.code}")
+                                        }
+                                        it.body.string()
+                                    }
+                                }
+                                if (continuation.isActive) continuation.resumeWith(result)
+                            }
+                        },
+                    )
                 }
+                onSuccess(body)
             }
         }
 

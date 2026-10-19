@@ -7414,14 +7414,8 @@ class MusicService :
         }
 
         if (!isLocalMedia && !isFullyDownloadedMedia && YTPlayerUtils.isBotDetectionException(error)) {
-            val recoverySnapshot = capturePlaybackRecoverySnapshot()
             resolveAudioStream.invalidate(currentMediaId)
             YTPlayerUtils.invalidateCachedStreamUrls(currentMediaId)
-            YTPlayerUtils.clearPlaybackAuthCaches()
-            if (playbackStreamRecoveryTracker.registerRetryAttempt(currentMediaId)) {
-                Timber.tag("MusicService").i("Retrying playback for %s after bot-detection source error", currentMediaId)
-                if (preparePlaybackFromSnapshot(recoverySnapshot)) return
-            }
         }
 
         if (!isLocalMedia && !isFullyDownloadedMedia && YTPlayerUtils.isBadStreamPlayerResponseException(error)) {

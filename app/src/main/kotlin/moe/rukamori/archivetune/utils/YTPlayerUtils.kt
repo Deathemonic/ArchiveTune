@@ -40,7 +40,6 @@ import java.util.concurrent.ConcurrentHashMap
 
 object YTPlayerUtils {
     private const val logTag = "YTPlayerUtils"
-    private const val YOUTUBEI_PO_TOKEN_RESOLUTION_BUDGET_MS = 5_000L
     private const val FAILED_CLIENT_BACKOFF_MS = 10 * 60 * 1000L
     private const val DEFAULT_STREAM_EXPIRE_SECONDS = 300
     private const val MAX_PLAYBACK_DATA_CACHE_ENTRIES = 128
@@ -376,13 +375,18 @@ object YTPlayerUtils {
         videoId: String,
         authState: PlaybackAuthState = YouTube.currentPlaybackAuthState(),
     ): PlaybackAuthState {
-        val contentBinding = authState.youtubeiContentBinding() ?: return authState
+        if (!authState.hasLoginCookie) return authState
+        val contentBinding = authState.youtubeiContentBinding()
+            ?: throw InvalidPlaybackLoginContextException(
+                videoId = videoId,
+                targetUrl = "https://music.youtube.com/watch?v=$videoId",
+                cause = IllegalStateException("YouTube playback token binding is missing"),
+            )
         val tokenResult =
-            BotGuardTokenGenerator.mintToken(
+            BotGuardTokenGenerator.mintRequiredToken(
                 videoId = videoId,
                 sessionId = contentBinding,
-                maximumWaitMillis = YOUTUBEI_PO_TOKEN_RESOLUTION_BUDGET_MS,
-            ) ?: return authState
+            )
         return authState.withGeneratedPoTokens(videoId, tokenResult)
     }
 

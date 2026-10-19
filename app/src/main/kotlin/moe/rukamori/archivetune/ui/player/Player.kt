@@ -70,6 +70,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -980,17 +981,14 @@ fun BottomSheetPlayer(
             }
         }
 
-    if (!aodModeEnabled) {
-        BackHandler(
-            enabled =
-                queueSheetState.isExpandedOrExpanding ||
-                    state.isExpandedOrExpanding,
-        ) {
-            when {
-                isLyricsScreenVisible && state.isExpandedOrExpanding -> isLyricsScreenVisible = false
-                queueSheetState.isExpandedOrExpanding -> queueSheetState.collapseSoft()
-                state.isExpandedOrExpanding -> state.collapseSoft()
-            }
+    val isPlayerVisible by remember(state) {
+        derivedStateOf { state.isExpandedOrExpanding || state.progress > 0f }
+    }
+    BackHandler(enabled = !aodModeEnabled && isPlayerVisible) {
+        when {
+            isLyricsScreenVisible -> isLyricsScreenVisible = false
+            queueSheetState.isExpandedOrExpanding -> queueSheetState.collapseSoft()
+            state.isExpandedOrExpanding -> state.collapseSoft()
         }
     }
 
@@ -1171,7 +1169,7 @@ fun BottomSheetPlayer(
         onDismiss = {
             playerConnection.service.stopAndClearPlayback(clearPersistentState = true)
         },
-        backHandlerEnabled = !aodModeEnabled,
+        backHandlerEnabled = false,
         collapsedContent = {
             MiniPlayer(
                 position = position,

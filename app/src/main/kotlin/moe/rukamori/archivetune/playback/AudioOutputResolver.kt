@@ -7,6 +7,7 @@
 
 package moe.rukamori.archivetune.playback
 
+import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
@@ -20,10 +21,10 @@ class AudioOutputResolver(
     private val audioManager: AudioManager,
 ) {
     private val mediaQueryAttributes =
-        android.media.AudioAttributes
+        AudioAttributes
             .Builder()
-            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
             .build()
 
     private val _activeAudioDevice =
@@ -56,10 +57,9 @@ class AudioOutputResolver(
     }
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    private fun resolveActiveDeviceApi33(): AudioDeviceInfo? =
-        audioManager
-            .getAudioDevicesForAttributes(mediaQueryAttributes)
-            .firstOrNull { it.isSink }
+    private fun resolveActiveDeviceApi33(): AudioDeviceInfo? = audioManager
+        .getAudioDevicesForAttributes(mediaQueryAttributes)
+        .firstOrNull { it.isSink }
 
     private fun resolveActiveDeviceHeuristic(): AudioDeviceInfo? {
         val sinks =

@@ -45,10 +45,12 @@ import moe.rukamori.archivetune.constants.AudioQualityKey
 import moe.rukamori.archivetune.constants.AutoDownloadOnLikeKey
 import moe.rukamori.archivetune.constants.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.constants.AutoStartOnBluetoothKey
+import moe.rukamori.archivetune.constants.BitPerfectEnabledKey
 import moe.rukamori.archivetune.constants.CrossfadeDurationKey
 import moe.rukamori.archivetune.constants.CrossfadeEnabledKey
 import moe.rukamori.archivetune.constants.CrossfadeGaplessKey
 import moe.rukamori.archivetune.constants.DeviceMutePlaybackRecoveryVolumeKey
+import moe.rukamori.archivetune.constants.DirectUsbEnabledKey
 import moe.rukamori.archivetune.constants.ExternalDownloaderEnabledKey
 import moe.rukamori.archivetune.constants.ExternalDownloaderPackageKey
 import moe.rukamori.archivetune.constants.HISTORY_DURATION_DEFAULT
@@ -159,6 +161,13 @@ fun PlayerSettings(navController: NavController) {
             PermanentShuffleKey,
             defaultValue = false,
         )
+    val (nativeBitPerfectEnabled) =
+        rememberPreference(
+            BitPerfectEnabledKey,
+            defaultValue = false,
+        )
+    val (directUsbEnabled) = rememberPreference(DirectUsbEnabledKey, false)
+    val bitPerfectEnabled = nativeBitPerfectEnabled || directUsbEnabled
     val (skipSilence, onSkipSilenceChange) =
         rememberPreference(
             SkipSilenceKey,
@@ -320,6 +329,7 @@ fun PlayerSettings(navController: NavController) {
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = SettingsDimensions.ScreenBottomPadding),
         ) {
+            NativeUsbAudioSettings()
             PreferenceGroup(title = stringResource(R.string.player)) {
                 item {
                     EnumListPreference(
@@ -359,7 +369,8 @@ fun PlayerSettings(navController: NavController) {
                         title = { Text(stringResource(R.string.audio_crossfade_title)) },
                         description = stringResource(R.string.audio_crossfade_description),
                         icon = { Icon(painterResource(R.drawable.animation), null) },
-                        checked = crossfadeEnabled,
+                        checked = crossfadeEnabled && !bitPerfectEnabled,
+                        isEnabled = !bitPerfectEnabled,
                         onCheckedChange = { enabled ->
                             if (enabled) {
                                 onAudioOffloadChange(false)
@@ -373,7 +384,7 @@ fun PlayerSettings(navController: NavController) {
                     CrossfadeSliderPreference(
                         valueSeconds = crossfadeDurationSeconds,
                         onValueChange = onCrossfadeDurationSecondsChange,
-                        isEnabled = crossfadeEnabled,
+                        isEnabled = crossfadeEnabled && !bitPerfectEnabled,
                     )
                 }
 
@@ -384,7 +395,7 @@ fun PlayerSettings(navController: NavController) {
                         icon = { Icon(painterResource(R.drawable.fast_forward), null) },
                         checked = crossfadeGapless,
                         onCheckedChange = onCrossfadeGaplessChange,
-                        isEnabled = crossfadeEnabled,
+                        isEnabled = crossfadeEnabled && !bitPerfectEnabled,
                     )
                 }
 
@@ -392,9 +403,9 @@ fun PlayerSettings(navController: NavController) {
                     SwitchPreference(
                         title = { Text(stringResource(R.string.skip_silence)) },
                         icon = { Icon(painterResource(R.drawable.fast_forward), null) },
-                        checked = skipSilence,
+                        checked = skipSilence && !bitPerfectEnabled,
                         onCheckedChange = onSkipSilenceChange,
-                        isEnabled = !audioOffload,
+                        isEnabled = !audioOffload && !bitPerfectEnabled,
                     )
                 }
 
@@ -402,7 +413,8 @@ fun PlayerSettings(navController: NavController) {
                     SwitchPreference(
                         title = { Text(stringResource(R.string.audio_normalization)) },
                         icon = { Icon(painterResource(R.drawable.volume_up), null) },
-                        checked = audioNormalization,
+                        checked = audioNormalization && !bitPerfectEnabled,
+                        isEnabled = !bitPerfectEnabled,
                         onCheckedChange = onAudioNormalizationChange,
                     )
                 }
@@ -412,7 +424,8 @@ fun PlayerSettings(navController: NavController) {
                         title = { Text(stringResource(R.string.audio_offload)) },
                         description = stringResource(R.string.audio_offload_desc),
                         icon = { Icon(painterResource(R.drawable.speed), null) },
-                        checked = audioOffload,
+                        checked = audioOffload && !bitPerfectEnabled,
+                        isEnabled = !bitPerfectEnabled,
                         onCheckedChange = { enabled ->
                             onAudioOffloadChange(enabled)
                             if (enabled) {

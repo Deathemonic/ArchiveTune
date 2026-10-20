@@ -31,6 +31,7 @@ apacheLang3 = "3.21.0"
 brotli = "0.1.2"
 desugaring = "2.1.5"
 junit = "4.13.2"
+robolectric = "4.17"
 turbine = "1.2.1"
 timber = "5.0.1"
 kuromojiIpadic = "0.9.0"
@@ -53,6 +54,7 @@ haze = "2.0.1"
 
 
 [libraries]
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 webkit = { module = "androidx.webkit:webkit", version.ref = "webkit" }
 protobuf-javalite = { module = "com.google.protobuf:protobuf-javalite", version.ref = "protobuf" }
 annotation = { module = "androidx.annotation:annotation", version.ref = "annotation" }

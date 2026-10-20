@@ -11,15 +11,21 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -30,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.ui.player.HandleUsbVolumeKeys
 
 val LocalMenuState = compositionLocalOf { MenuState() }
 
@@ -65,7 +72,7 @@ class MenuState(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun BottomSheetMenu(
     modifier: Modifier = Modifier,
@@ -77,7 +84,11 @@ fun BottomSheetMenu(
     state.dialogContent?.invoke()
 
     if (state.isVisible) {
+        val sheetState = rememberModalBottomSheetState()
+
         ModalBottomSheet(
+            sheetState = sheetState,
+            contentWindowInsets = { WindowInsets.safeDrawing },
             onDismissRequest = {
                 focusManager.clearFocus()
                 state.isVisible = false
@@ -88,7 +99,7 @@ fun BottomSheetMenu(
                 Box(
                     modifier =
                         Modifier
-                            .padding(vertical = 12.dp)
+                            .padding(horizontal = 4.dp, vertical = 22.dp)
                             .size(width = 40.dp, height = 4.dp)
                             .clip(RoundedCornerShape(2.dp))
                             .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)),
@@ -96,6 +107,14 @@ fun BottomSheetMenu(
             },
             modifier = modifier.fillMaxHeight(),
         ) {
+            val isKeyboardVisible = WindowInsets.isImeVisible
+
+            LaunchedEffect(sheetState, isKeyboardVisible) {
+                if (isKeyboardVisible) sheetState.expand()
+            }
+
+            HandleUsbVolumeKeys()
+
             Column(
                 modifier =
                     Modifier

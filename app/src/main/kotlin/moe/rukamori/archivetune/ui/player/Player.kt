@@ -206,6 +206,9 @@ import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
 import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.viewmodels.UsbVolumeUiModel
+import moe.rukamori.archivetune.viewmodels.UsbVolumeUiState
+import moe.rukamori.archivetune.viewmodels.UsbVolumeViewModel
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -217,11 +220,24 @@ private const val V8BackdropArtworkSizePx = 1_024
 @Stable
 internal class DeviceMusicVolumeController(
     private val audioManager: AudioManager,
+    private val onHardwareVolumeChange: (Float) -> Unit,
 ) {
+    var hardwareVolume by mutableStateOf<UsbVolumeUiModel?>(null)
+        private set
+
+    var hardwareVolumeError by mutableStateOf(false)
+        private set
+
     private var minVolume by mutableIntStateOf(readMinVolume())
     private var maxVolume by mutableIntStateOf(readMaxVolume())
     var volumeFraction by mutableFloatStateOf(readVolumeFraction())
         private set
+
+    fun updateHardwareVolume(volume: UsbVolumeUiModel?, failed: Boolean) {
+        hardwareVolume = volume?.takeIf { it.maxDb > it.minDb }
+        hardwareVolumeError = failed
+        refresh()
+    }
 
     fun refresh() {
         minVolume = readMinVolume()
@@ -232,6 +248,14 @@ internal class DeviceMusicVolumeController(
     @JvmName("setDeviceMusicVolumeFraction")
     fun setVolumeFraction(fraction: Float) {
         val safeFraction = fraction.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: volumeFraction
+
+        hardwareVolume?.let {
+            onHardwareVolumeChange(safeFraction)
+            volumeFraction = safeFraction
+
+            return
+        }
+
         val volumeRange = (maxVolume - minVolume).coerceAtLeast(1)
         val targetVolume =
             (minVolume + (safeFraction * volumeRange).roundToInt())
@@ -242,6 +266,10 @@ internal class DeviceMusicVolumeController(
     }
 
     private fun readVolumeFraction(): Float {
+        hardwareVolume?.let { range ->
+            return ((range.currentDb - range.minDb) / (range.maxDb - range.minDb)).coerceIn(0f, 1f)
+        }
+
         val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
         val volumeRange = (maxVolume - minVolume).coerceAtLeast(1)
         return ((currentVolume - minVolume).toFloat() / volumeRange.toFloat()).coerceIn(0f, 1f)
@@ -263,16 +291,30 @@ internal class DeviceMusicVolumeController(
 }
 
 @Composable
-internal fun rememberDeviceMusicVolumeController(): DeviceMusicVolumeController {
+internal fun rememberDeviceMusicVolumeController(viewModel: UsbVolumeViewModel = hiltViewModel()): DeviceMusicVolumeController {
     val context = LocalContext.current
     val audioManager =
         remember(context) {
             context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         }
-    val controller =
-        remember(audioManager) {
-            DeviceMusicVolumeController(audioManager)
+    val connection = LocalPlayerConnection.current
+    val usb by viewModel.state.collectAsStateWithLifecycle()
+    val controller = remember(audioManager, viewModel) {
+        DeviceMusicVolumeController(audioManager) { fraction -> viewModel.setFraction(fraction) }
+    }
+
+    DisposableEffect(connection, viewModel) {
+        connection?.let(viewModel::bind)
+        onDispose { connection?.let(viewModel::unbind) }
+    }
+
+    LaunchedEffect(controller, usb) {
+        when (val state = usb) {
+            is UsbVolumeUiState.Success -> controller.updateHardwareVolume(state.volume, state.volume.failed)
+            UsbVolumeUiState.Empty -> controller.updateHardwareVolume(null, false)
+            UsbVolumeUiState.Error -> controller.updateHardwareVolume(controller.hardwareVolume, true)
         }
+    }
 
     DisposableEffect(context, controller) {
         val observer =

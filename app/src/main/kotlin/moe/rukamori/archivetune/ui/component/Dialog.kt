@@ -70,6 +70,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.ui.player.HandleUsbVolumeKeys
 
 @Composable
 fun DefaultDialog(
@@ -87,6 +88,8 @@ fun DefaultDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        HandleUsbVolumeKeys()
+
         BoxWithConstraints(
             modifier =
                 Modifier
@@ -117,7 +120,7 @@ fun DefaultDialog(
 
                     Column(
                         horizontalAlignment = horizontalAlignment,
-                        modifier = bodyModifier,
+                        modifier = bodyModifier.fillMaxWidth(),
                     ) {
                         if (icon != null) {
                             CompositionLocalProvider(LocalContentColor provides AlertDialogDefaults.iconContentColor) {

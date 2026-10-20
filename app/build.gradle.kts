@@ -307,6 +307,7 @@ ksp {
 }
 
 dependencies {
+    implementation(project(":usbaudio"))
     implementation(libs.guava)
     implementation(libs.coroutines.guava)
     implementation(libs.concurrent.futures)
@@ -416,6 +417,7 @@ dependencies {
 
     implementation(libs.timber)
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
     testImplementation(libs.turbine)
     implementation(libs.translator)
     implementation("androidx.lifecycle:lifecycle-process:2.11.0")

@@ -14,7 +14,6 @@
 package moe.rukamori.archivetune.ui.component
 
 import android.app.Activity
-import android.os.SystemClock
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -67,7 +66,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlendMode
@@ -83,12 +81,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.repeatOnLifecycle
-import androidx.media3.common.Player
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
@@ -98,7 +91,8 @@ import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.ui.composable.list.rememberLyricsLazyListState
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.LyricsAnchor
-import kotlinx.coroutines.isActive
+import kotlin.math.roundToInt
+import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
@@ -115,8 +109,6 @@ import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
 import moe.rukamori.archivetune.ui.theme.rememberArchiveTuneLyricsFontFamily
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.viewmodels.LyricsRenderScreenState
-import moe.rukamori.archivetune.viewmodels.LyricsRenderViewModel
-import kotlin.math.roundToInt
 
 private const val LRC_LEAD_MS = 300L
 private const val MIN_KARAOKE_SYLLABLE_DURATION_MS = 1
@@ -129,12 +121,11 @@ fun LyricsEnhanced(
     modifier: Modifier = Modifier,
     textColorOverride: Color? = null,
     lyricsLineBlurOverride: Boolean? = null,
-    lyricsRenderViewModel: LyricsRenderViewModel = hiltViewModel(),
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
     val player = playerConnection.player
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val animationsDisabled = LocalAnimationsDisabled.current
 
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
@@ -212,56 +203,21 @@ fun LyricsEnhanced(
     val leadMs =
         if (isWordSyncedFormat || preparedLyrics?.sourceFormat == LyricsSourceFormat.TTML) 0L else LRC_LEAD_MS
 
-    val latestSliderPositionProvider = rememberUpdatedState(sliderPositionProvider)
     val latestLyricsSyncOffset = rememberUpdatedState(lyricsSyncOffset)
     val latestLeadMs = rememberUpdatedState(leadMs)
-    val playbackPositionMs = lyricsRenderViewModel.playbackPositionMs.collectAsStateWithLifecycle()
+    val playbackPositionMs = rememberLyricsPlaybackPosition(
+        player = player,
+        sessionKey = lyricsSessionKey,
+        sliderPositionProvider = sliderPositionProvider,
+        animationsDisabled = animationsDisabled,
+        enabled = isSynced,
+    )
     val plainLyricsListState = key(lyricsSessionKey) { rememberLazyListState() }
     val karaokeLyricsListState = key(lyricsSessionKey) { rememberLyricsLazyListState() }
 
     LaunchedEffect(lyricsSessionKey) {
         isSelectionModeActive = false
         selectedLineKeys.clear()
-    }
-
-    DisposableEffect(player, lyricsRenderViewModel) {
-        val listener =
-            object : Player.Listener {
-                override fun onEvents(player: Player, events: Player.Events) {
-                    if (
-                        events.contains(Player.EVENT_POSITION_DISCONTINUITY) ||
-                        events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) ||
-                        events.contains(Player.EVENT_IS_PLAYING_CHANGED) ||
-                        events.contains(Player.EVENT_PLAYBACK_PARAMETERS_CHANGED)
-                    ) {
-                        lyricsRenderViewModel.onPlaybackPositionChanged(
-                            latestSliderPositionProvider.value() ?: player.currentPosition,
-                        )
-                    }
-                }
-            }
-        player.addListener(listener)
-        onDispose { player.removeListener(listener) }
-    }
-
-    LaunchedEffect(player, lifecycleOwner, lyricsRenderViewModel) {
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            lyricsRenderViewModel.onPlaybackPositionChanged(
-                latestSliderPositionProvider.value() ?: player.currentPosition,
-            )
-            while (isActive) {
-                withFrameNanos {
-                    val sliderPosition = latestSliderPositionProvider.value()
-                    lyricsRenderViewModel.onPlaybackFrame(
-                        positionMs = sliderPosition ?: player.currentPosition,
-                        sampleTimeNanos = SystemClock.elapsedRealtimeNanos(),
-                        playbackSpeed = player.playbackParameters.speed,
-                        isAdvancing = player.isPlaying && sliderPosition == null,
-                        durationMs = player.duration,
-                    )
-                }
-            }
-        }
     }
 
     val playbackSyncPosition: () -> Int =
@@ -271,7 +227,7 @@ fun LyricsEnhanced(
                     playbackPositionMs.value +
                         latestLyricsSyncOffset.value.toLong() +
                         latestLeadMs.value
-                ).coerceIn(0L, Int.MAX_VALUE.toLong())
+                    ).coerceIn(0L, Int.MAX_VALUE.toLong())
                     .toInt()
             }
         }

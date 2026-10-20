@@ -1,0 +1,124 @@
+package moe.rukamori.archivetune.ui.player
+
+import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Usb
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.core.net.toUri
+import androidx.media3.common.C
+import androidx.media3.common.Format
+import java.util.Locale
+import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.playback.AudioSignalData
+import moe.rukamori.archivetune.playback.NativeUsbAudioStatus
+import moe.rukamori.archivetune.utils.isLocalMediaId
+
+enum class AudioSignalSource(
+    @param:StringRes val labelRes: Int,
+    @param:DrawableRes val iconRes: Int,
+) {
+    Local(R.string.audio_source_local, R.drawable.music_note),
+    Stream(R.string.audio_source_stream, R.drawable.graphic_eq),
+    YouTube(R.string.audio_source_youtube, R.drawable.youtube_music),
+    Unknown(R.string.unknown, R.drawable.graphic_eq),
+}
+
+@Immutable
+data class AudioSignalUiModel(
+    val title: String?,
+    val nativeStatus: NativeUsbAudioStatus,
+    val outputEncoding: Int?,
+    val outputSampleRate: Int?,
+    val usbEnabled: Boolean,
+    @param:StringRes val usbMessageRes: Int,
+    val usbPermissionRequired: Boolean,
+    val usbStream: UsbStreamUiModel?,
+    val underruns: Long,
+    val transferErrors: Long,
+    val deviceName: String?,
+    val deviceIcon: ImageVector,
+    val source: AudioSignalSource,
+    val bitDepth: Int?,
+    val sampleRate: Int?,
+    val codec: String?,
+    val channelCount: Int?,
+    val isLossless: Boolean,
+    val isProcessingBypassed: Boolean,
+)
+
+@Immutable
+data class UsbStreamUiModel(
+    val bitsPerSample: Int,
+    val outputRate: Int,
+    val channels: Int,
+    val deviceRate: Int,
+    val bitResolution: Int,
+    val containerBits: Int,
+)
+
+internal fun sourcePcmBitDepth(format: Format?): Int? {
+    if (format?.sampleMimeType !in
+        setOf("audio/raw", "audio/flac", "audio/x-flac", "audio/alac")
+    ) {
+        return null
+    }
+
+    return when (format?.pcmEncoding) {
+        C.ENCODING_PCM_8BIT -> 8
+        C.ENCODING_PCM_16BIT -> 16
+        C.ENCODING_PCM_24BIT -> 24
+        C.ENCODING_PCM_32BIT -> 32
+        else -> null
+    }
+}
+
+@Composable
+internal fun formatSampleRate(rate: Int): String = if (rate % 1000 == 0) {
+    stringResource(R.string.audio_sample_rate_integer, rate / 1000)
+} else {
+    stringResource(R.string.eq_frequency_kilohertz, rate / 1000.0)
+}
+
+internal fun AudioSignalData.toAudioSignalUiModel(): AudioSignalUiModel {
+    val local = metadata?.id?.isLocalMediaId() == true
+    val source = when {
+        metadata == null -> AudioSignalSource.Unknown
+        local -> AudioSignalSource.Local
+        metadata.id.toUri().scheme in setOf("http", "https") -> AudioSignalSource.Stream
+        else -> AudioSignalSource.YouTube
+    }
+
+    val format = native.sourceFormat
+
+    return AudioSignalUiModel(
+        title = metadata?.title,
+        nativeStatus = native.status,
+        outputEncoding = native.outputFormat?.encoding,
+        outputSampleRate = native.outputFormat?.sampleRate,
+        usbEnabled = usb.enabled,
+        usbMessageRes = usb.messageRes,
+        usbPermissionRequired = usb.permissionRequired,
+        usbStream = usb.stream?.let {
+            UsbStreamUiModel(it.bitsPerSample, it.outputRate, it.channels, it.deviceRate, it.format.bitResolution, it.format.subslotBytes * 8)
+        },
+        underruns = usb.underruns,
+        transferErrors = usb.errors,
+        deviceName = when {
+            usb.enabled -> usb.deviceName
+            native.status == NativeUsbAudioStatus.RequestAccepted -> native.deviceName ?: outputDevice.name
+            else -> outputDevice.name
+        },
+        deviceIcon = if (usb.enabled) Icons.Rounded.Usb else outputDevice.type.imageVector,
+        source = source,
+        bitDepth = sourcePcmBitDepth(format),
+        sampleRate = format?.sampleRate?.takeIf { it > 0 },
+        codec = format?.sampleMimeType?.substringAfter('/')?.uppercase(Locale.ROOT),
+        channelCount = format?.channelCount?.takeIf { it > 0 },
+        isLossless = format?.sampleMimeType in setOf("audio/flac", "audio/x-flac", "audio/alac", "audio/raw"),
+        isProcessingBypassed = usb.enabled || native.status != NativeUsbAudioStatus.Disabled,
+    )
+}

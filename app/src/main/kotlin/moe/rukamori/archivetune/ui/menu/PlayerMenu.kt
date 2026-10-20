@@ -92,6 +92,8 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.ArchiveTuneCanvasKey
 import moe.rukamori.archivetune.constants.AodModeEnabledKey
 import moe.rukamori.archivetune.constants.ArtistSeparatorsKey
+import moe.rukamori.archivetune.constants.BitPerfectEnabledKey
+import moe.rukamori.archivetune.constants.DirectUsbEnabledKey
 import moe.rukamori.archivetune.constants.ExternalDownloaderEnabledKey
 import moe.rukamori.archivetune.constants.ExternalDownloaderPackageKey
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
@@ -162,6 +164,10 @@ fun PlayerMenu(
         remember(mediaMetadata.artists) {
             mediaMetadata.artists.filter { it.id != null }
         }
+
+    val (nativeBitPerfectEnabled) = rememberPreference(BitPerfectEnabledKey, defaultValue = false)
+    val (directUsbEnabled) = rememberPreference(DirectUsbEnabledKey, defaultValue = false)
+    val bitPerfectEnabled = nativeBitPerfectEnabled || directUsbEnabled
 
     // Artist separators for splitting artist names
     val (artistSeparators) = rememberPreference(ArtistSeparatorsKey, defaultValue = ",;/&")
@@ -423,6 +429,8 @@ fun PlayerMenu(
         PlayerVolumeCard(
             volume = deviceMusicVolumeController.volumeFraction,
             onVolumeChange = onPlayerVolumeChange,
+            valueText = deviceMusicVolumeController.hardwareVolume?.let { stringResource(R.string.audio_volume_db, it.currentDb) },
+            errorText = if (deviceMusicVolumeController.hardwareVolumeError) stringResource(R.string.usb_hardware_volume_failed) else null,
         )
     }
 
@@ -967,7 +975,10 @@ fun PlayerMenu(
                                     contentDescription = null,
                                 )
                             },
-                            modifier = Modifier.clickable { showEqualizerDialog = true },
+                            supportingContent = {
+                                if (bitPerfectEnabled) Text(stringResource(R.string.bit_perfect_processing_disabled))
+                            },
+                            modifier = Modifier.clickable(enabled = !bitPerfectEnabled) { showEqualizerDialog = true },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         )
 
@@ -994,7 +1005,7 @@ fun PlayerMenu(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             },
-                            modifier = Modifier.clickable { showPitchTempoDialog = true },
+                            modifier = Modifier.clickable(enabled = !bitPerfectEnabled) { showPitchTempoDialog = true },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         )
                     }
@@ -1008,6 +1019,8 @@ fun PlayerMenu(
 private fun PlayerVolumeCard(
     volume: Float,
     onVolumeChange: (Float) -> Unit,
+    valueText: String? = null,
+    errorText: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val safeVolume = volume.coerceIn(0f, 1f)
@@ -1032,10 +1045,14 @@ private fun PlayerVolumeCard(
                 )
 
                 Text(
-                    text = "${(safeVolume * 100).roundToInt()}%",
+                    text = valueText ?: "${(safeVolume * 100).roundToInt()}%",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
+            }
+
+            if (errorText != null) {
+                Text(errorText, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
 
             Surface(

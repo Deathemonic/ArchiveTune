@@ -52,9 +52,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -96,11 +95,14 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlin.math.abs
+import kotlin.math.roundToLong
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
@@ -118,8 +120,6 @@ import moe.rukamori.archivetune.ui.theme.rememberArchiveTuneLyricsFontFamily
 import moe.rukamori.archivetune.ui.utils.smoothFadingEdge
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.viewmodels.LyricsRenderScreenState
-import kotlin.math.abs
-import kotlin.math.roundToLong
 
 // ──────────────────────────────────────────────────────────────────────
 // Constants
@@ -175,7 +175,7 @@ fun LyricsV2(
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
 
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
     val preparedLyrics = (lyricsState as? LyricsRenderScreenState.Success)?.lyrics
     val preferences = preparedLyrics?.preferences
@@ -234,22 +234,25 @@ fun LyricsV2(
             isWordSyncedFormat -> WORD_SYNC_LEAD_MS
             else -> LRC_LEAD_MS
         }
-    var currentPositionMs by remember { mutableLongStateOf(0L) }
-    var playbackPositionMs by remember { mutableLongStateOf(0L) }
-    var currentLineIndex by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(entriesWithWords, isSynced, leadMs, lyricsSyncOffset) {
-        if (!isSynced || entriesWithWords.isEmpty()) return@LaunchedEffect
-        val pollIntervalMs = if (isWordSyncedFormat) 16L else 50L
-        while (isActive) {
-            val sliderPos = sliderPositionProvider()
-            val pos = sliderPos ?: player.currentPosition
-
-            playbackPositionMs = (pos + lyricsSyncOffset.toLong()).coerceAtLeast(0L)
-            currentPositionMs = (playbackPositionMs + leadMs).coerceAtLeast(0L)
-
-            currentLineIndex = findCurrentLineIndex(entriesWithWords, currentPositionMs, 0L)
-            delay(pollIntervalMs)
+    val sessionKey = remember(mediaMetadata?.id, entriesWithWords) { mediaMetadata?.id to entriesWithWords }
+    val position = rememberLyricsPlaybackPosition(
+        player = player,
+        sessionKey = sessionKey,
+        sliderPositionProvider = sliderPositionProvider,
+        animationsDisabled = LocalAnimationsDisabled.current,
+        enabled = isSynced && entriesWithWords.isNotEmpty(),
+    )
+    val playbackPosition = remember(position, lyricsSyncOffset) {
+        derivedStateOf { (position.longValue + lyricsSyncOffset.toLong()).coerceAtLeast(0L) }
+    }
+    val linePosition = remember(playbackPosition, leadMs) {
+        derivedStateOf { (playbackPosition.value + leadMs).coerceAtLeast(0L) }
+    }
+    val playbackPositionMs by playbackPosition
+    val currentPositionMs by linePosition
+    val currentLineIndex by remember(entriesWithWords, isSynced, linePosition) {
+        derivedStateOf {
+            if (isSynced) findCurrentLineIndex(entriesWithWords, linePosition.value, 0L) else 0
         }
     }
 

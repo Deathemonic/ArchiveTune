@@ -49,9 +49,11 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.ParserException
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Player.EVENT_POSITION_DISCONTINUITY
 import androidx.media3.common.Player.EVENT_TIMELINE_CHANGED
@@ -60,6 +62,7 @@ import androidx.media3.common.Player.REPEAT_MODE_OFF
 import androidx.media3.common.Player.REPEAT_MODE_ONE
 import androidx.media3.common.Player.STATE_IDLE
 import androidx.media3.common.Timeline
+import androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
@@ -76,6 +79,7 @@ import androidx.media3.datasource.cache.ContentMetadata
 import androidx.media3.datasource.cache.ContentMetadataMutations
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -121,9 +125,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.MainActivity
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.androidauto.AndroidAutoConfiguration
 import moe.rukamori.archivetune.androidauto.AndroidAutoCustomAction
 import moe.rukamori.archivetune.androidauto.AndroidAutoSettingsUseCases
@@ -138,10 +142,12 @@ import moe.rukamori.archivetune.constants.AutoDownloadOnLikeKey
 import moe.rukamori.archivetune.constants.AutoLoadMoreKey
 import moe.rukamori.archivetune.constants.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.constants.AutoStartOnBluetoothKey
+import moe.rukamori.archivetune.constants.BitPerfectEnabledKey
 import moe.rukamori.archivetune.constants.CrossfadeDurationKey
 import moe.rukamori.archivetune.constants.CrossfadeEnabledKey
 import moe.rukamori.archivetune.constants.CrossfadeGaplessKey
 import moe.rukamori.archivetune.constants.DeviceMutePlaybackRecoveryVolumeKey
+import moe.rukamori.archivetune.constants.DirectUsbEnabledKey
 import moe.rukamori.archivetune.constants.DiscordShowWhenPausedKey
 import moe.rukamori.archivetune.constants.DiscordTokenKey
 import moe.rukamori.archivetune.constants.EnableDiscordRPCKey
@@ -226,10 +232,6 @@ import moe.rukamori.archivetune.morideobfuscator.youtubei.YoutubeiFailureKind
 import moe.rukamori.archivetune.playback.preload.NextStreamPreloader
 import moe.rukamori.archivetune.playback.preload.ObservePlaybackPreloadConfigurationUseCase
 import moe.rukamori.archivetune.playback.preload.PlaybackPreloadConfiguration
-import moe.rukamori.archivetune.playback.stream.AudioStreamRequest
-import moe.rukamori.archivetune.playback.stream.ResolveAudioStreamUseCase
-import moe.rukamori.archivetune.playback.stream.ResolvedAudioStream
-import moe.rukamori.archivetune.playback.stream.StreamPurpose
 import moe.rukamori.archivetune.playback.queues.EmptyQueue
 import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.Queue
@@ -238,11 +240,16 @@ import moe.rukamori.archivetune.playback.queues.filterBlockedArtists
 import moe.rukamori.archivetune.playback.queues.filterExplicit
 import moe.rukamori.archivetune.playback.queues.filterVideo
 import moe.rukamori.archivetune.playback.queues.hasBlockedArtist
+import moe.rukamori.archivetune.playback.stream.AudioStreamRequest
+import moe.rukamori.archivetune.playback.stream.ResolveAudioStreamUseCase
+import moe.rukamori.archivetune.playback.stream.ResolvedAudioStream
+import moe.rukamori.archivetune.playback.stream.StreamPurpose
 import moe.rukamori.archivetune.scrobbling.LastFmServiceConfig
 import moe.rukamori.archivetune.sponsorblock.SponsorBlockPlaybackController
 import moe.rukamori.archivetune.storage.StorageFolderKind
 import moe.rukamori.archivetune.storage.StorageLocationRepository
 import moe.rukamori.archivetune.together.TogetherPlaybackSync
+import moe.rukamori.archivetune.together.TogetherSessionState
 import moe.rukamori.archivetune.ui.screens.settings.DiscordPresenceManager
 import moe.rukamori.archivetune.ui.screens.settings.ListenBrainzManager
 import moe.rukamori.archivetune.utils.CoilBitmapLoader
@@ -346,6 +353,50 @@ class MusicService :
     private var lastAudioOutputDeviceSignature: String? = null
     private var lastAudioRouteRecoveryRealtimeMs = 0L
     private lateinit var audioOutputResolver: AudioOutputResolver
+    private val nativeUsbAudio by lazy { NativeUsbAudioController(this) }
+    val nativeUsbAudioState get() = nativeUsbAudio.state
+
+    @Volatile private var usbFallbackPending = false
+    private val directUsbAudio: DirectUsbAudioController by lazy {
+        DirectUsbAudioController(
+            this,
+            onReady = {
+                Handler(mainLooper).post {
+                    if (::localPlayer.isInitialized && directUsbAudio.enabled) rebuildLocalAudioOutput()
+                }
+            },
+        ) {
+            usbFallbackPending = true
+            Handler(mainLooper).post { fallbackToNativeAudio() }
+        }
+    }
+    val directUsbAudioState get() = directUsbAudio.state
+    private fun fallbackToNativeAudio() {
+        if (!::localPlayer.isInitialized) return
+        val resume = localPlayer.playWhenReady
+        directUsbAudio.updateEnabled(false)
+        nativeUsbAudio.updateEnabled(true)
+        localPlayer.pause()
+        audioOutputResolver.refresh()
+        lastAudioOutputDeviceSignature = currentAudioOutputDeviceSignature()
+        rebuildLocalAudioOutput()
+        if (resume) localPlayer.play()
+        scope.launch {
+            dataStore.edit {
+                it[DirectUsbEnabledKey] = false
+                it[BitPerfectEnabledKey] = true
+            }
+            delay(AUDIO_ROUTE_CHANGE_DEBOUNCE_MS * 2)
+            lastAudioOutputDeviceSignature = currentAudioOutputDeviceSignature()
+            audioOutputResolver.refresh()
+            usbFallbackPending = false
+        }
+    }
+
+    fun requestDirectUsbPermission() = directUsbAudio.requestPermission()
+    fun setUsbHardwareVolume(db: Float) = directUsbAudio.setVolume(db)
+
+    fun adjustUsbHardwareVolume(direction: Int): Boolean = directUsbAudio.adjustVolume(direction)
 
     val activeAudioDevice get() = audioOutputResolver.activeAudioDevice
 
@@ -1158,6 +1209,8 @@ class MusicService :
             reportException(e)
         }
 
+        directUsbAudio.updateEnabled(dataStore.get(DirectUsbEnabledKey, false))
+        nativeUsbAudio.updateEnabled(dataStore.get(BitPerfectEnabledKey, false) || directUsbAudio.enabled)
         localPlayer =
             ExoPlayer
                 .Builder(this)
@@ -1176,6 +1229,17 @@ class MusicService :
                 .build()
                 .apply {
                     addAnalyticsListener(PlaybackStatsListener(false, this@MusicService))
+                    addAnalyticsListener(
+                        object : AnalyticsListener {
+                            override fun onAudioInputFormatChanged(
+                                eventTime: AnalyticsListener.EventTime,
+                                format: Format,
+                                decoderReuseEvaluation: DecoderReuseEvaluation?,
+                            ) {
+                                nativeUsbAudio.updateSource(format)
+                            }
+                        },
+                    )
                     addListener(audioEffectPlayerListener)
                     setOffloadEnabled(false)
                 }
@@ -1249,7 +1313,7 @@ class MusicService :
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ArchiveTune:Playback")
                 .also { it.setReferenceCounted(false) }
         setupAudioFocusRequest()
-        audioManager.registerAudioDeviceCallback(audioDeviceCallback, android.os.Handler(mainLooper))
+        audioManager.registerAudioDeviceCallback(audioDeviceCallback, Handler(mainLooper))
         audioDeviceCallbackRegistered = true
         lastAudioOutputDeviceSignature = currentAudioOutputDeviceSignature()
         audioOutputResolver.refresh()
@@ -1310,7 +1374,7 @@ class MusicService :
             withContext(Dispatchers.Main) {
                 player.repeatMode = repeatMode
                 playerVolume.value = volume
-                updateAudioOffload(offload && !crossfadePrefEnabled)
+                updateAudioOffload(offload && !crossfadePrefEnabled && !nativeUsbAudio.enabled)
             }
         }
 
@@ -1382,7 +1446,26 @@ class MusicService :
         }
 
         dataStore.data
-            .map { it[SkipSilenceKey] ?: false }
+            .map { (it[BitPerfectEnabledKey] == true || it[DirectUsbEnabledKey] == true) to (it[DirectUsbEnabledKey] == true) }
+            .distinctUntilChanged()
+            .collectLatest(scope) { (enabled, direct) ->
+                if (nativeUsbAudio.enabled != enabled || directUsbAudio.enabled != direct) {
+                    player.pause()
+                    directUsbAudio.updateEnabled(direct)
+                    nativeUsbAudio.updateEnabled(enabled)
+                    effectiveVolumeRampJob?.cancel()
+                    cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                    localPlayer.playbackParameters = PlaybackParameters.DEFAULT
+                    localPlayer.setAudioAttributes(playbackAudioAttributes(), false)
+                    if (enabled) closeAudioEffectSession() else reconcileAudioEffectSession()
+                    applyEffectiveVolumeImmediately(currentEffectivePlayerVolume())
+                    rebuildLocalAudioOutput()
+                }
+                nativeUsbAudio.refresh()
+            }
+
+        dataStore.data
+            .map { (it[SkipSilenceKey] ?: false) && it[BitPerfectEnabledKey] != true && it[DirectUsbEnabledKey] != true }
             .distinctUntilChanged()
             .collectLatest(scope) {
                 localPlayer.skipSilenceEnabled = it
@@ -1421,11 +1504,9 @@ class MusicService :
                 }
             }
 
-        combine(
-            dataStore.data.map { it[AudioOffload] ?: false },
-            dataStore.data.map { it[CrossfadeEnabledKey] ?: false },
-        ) { offloadEnabled, crossfadeEnabled ->
-            offloadEnabled to crossfadeEnabled
+        dataStore.data.map { prefs ->
+            val bitPerfect = prefs[BitPerfectEnabledKey] == true || prefs[DirectUsbEnabledKey] == true
+            (prefs[AudioOffload] == true && !bitPerfect) to (prefs[CrossfadeEnabledKey] == true)
         }.distinctUntilChanged()
             .collectLatest(scope) { (offloadEnabled, crossfadeEnabled) ->
                 val effectiveOffload = offloadEnabled && !crossfadeEnabled
@@ -1444,7 +1525,7 @@ class MusicService :
             val durationSeconds = prefs[CrossfadeDurationKey] ?: 5f
             val gapless = prefs[CrossfadeGaplessKey] ?: true
             CrossfadeConfig(
-                enabled = enabled && togetherState is moe.rukamori.archivetune.together.TogetherSessionState.Idle,
+                enabled = enabled && prefs[BitPerfectEnabledKey] != true && prefs[DirectUsbEnabledKey] != true && togetherState is TogetherSessionState.Idle,
                 durationSeconds = durationSeconds,
                 gapless = gapless,
             )
@@ -1488,7 +1569,7 @@ class MusicService :
                 .distinctUntilChanged(),
             currentFormat,
             dataStore.data
-                .map { it[AudioNormalizationKey] ?: true }
+                .map { (it[AudioNormalizationKey] ?: true) && it[BitPerfectEnabledKey] != true && it[DirectUsbEnabledKey] != true }
                 .distinctUntilChanged(),
         ) { mediaId, format, normalizeAudio ->
             normalizeAudio to resolveAudioNormalizationFactor(mediaId, format, normalizeAudio)
@@ -2376,11 +2457,13 @@ class MusicService :
     }
 
     private fun onAudioOutputDeviceChanged() {
-        if (!::player.isInitialized) return
+        if (!::player.isInitialized || directUsbAudio.enabled || usbFallbackPending) return
         val outputSignature = currentAudioOutputDeviceSignature()
         if (outputSignature == lastAudioOutputDeviceSignature) return
         lastAudioOutputDeviceSignature = outputSignature
+        if (nativeUsbAudio.enabled) player.pause()
         audioOutputResolver.refresh()
+        nativeUsbAudio.refresh()
         cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
         player.setAudioAttributes(playbackAudioAttributes(), false)
         audioRouteRecoveryJob?.cancel()
@@ -2393,6 +2476,11 @@ class MusicService :
 
     private suspend fun recoverAudioRouteAfterDeviceChange() {
         if (!::player.isInitialized) return
+
+        if (nativeUsbAudio.enabled) {
+            rebuildLocalAudioOutput()
+            return
+        }
 
         rebindAudioEffectsAfterRouteChange()
 
@@ -2429,6 +2517,15 @@ class MusicService :
         ) {
             player.playWhenReady = true
         }
+    }
+
+    private fun rebuildLocalAudioOutput() {
+        if (localPlayer.currentMediaItem == null) return
+        val index = localPlayer.currentMediaItemIndex
+        val position = localPlayer.currentPosition
+        localPlayer.stop()
+        localPlayer.seekTo(index, position)
+        localPlayer.prepare()
     }
 
     private suspend fun rebindAudioEffectsAfterRouteChange() {
@@ -2468,6 +2565,9 @@ class MusicService :
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .setAllowedCapturePolicy(C.ALLOW_CAPTURE_BY_ALL)
+            .setSpatializationBehavior(
+                if (nativeUsbAudio.enabled) C.SPATIALIZATION_BEHAVIOR_NEVER else C.SPATIALIZATION_BEHAVIOR_AUTO,
+            )
             .build()
 
     private fun calculateEffectivePlayerVolume(
@@ -2475,6 +2575,7 @@ class MusicService :
         normalizeFactor: Float,
         audioFocusVolumeFactor: Float,
     ): Float {
+        if (nativeUsbAudio.enabled) return 1f
         val safePlayerVolume = playerVolume.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
         val safeNormalizeFactor =
             normalizeFactor.takeIf { it.isFinite() }?.coerceIn(MIN_AUDIO_NORMALIZATION_FACTOR, MAX_AUDIO_NORMALIZATION_FACTOR) ?: 1f
@@ -6294,7 +6395,7 @@ class MusicService :
     }
 
     private fun ensureAudioEffects(sessionId: Int) {
-        if (sessionId <= 0) return
+        if (nativeUsbAudio.enabled || sessionId <= 0) return
         if (audioEffectsSessionId == sessionId && equalizer != null) return
 
         audioEffectsInitializationJob?.cancel()
@@ -6338,6 +6439,10 @@ class MusicService :
             }.getOrNull()
 
     private fun applyEqSettingsToEffects(settings: EqSettings) {
+        if (nativeUsbAudio.enabled) {
+            releaseAudioEffects()
+            return
+        }
         val eq = equalizer ?: return
         val caps = eqCapabilities.value
         val bandCount = caps?.bandCount ?: readAudioEffectValue("equalizer band count") { eq.numberOfBands.toInt() } ?: 0
@@ -6379,6 +6484,7 @@ class MusicService :
     }
 
     private fun shouldKeepAudioEffectSessionOpen(): Boolean {
+        if (nativeUsbAudio.enabled) return false
         val playbackState = localPlayer.playbackState
         return playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_READY
     }
@@ -6396,7 +6502,7 @@ class MusicService :
     }
 
     private fun openAudioEffectSession() {
-        if (isAudioEffectSessionOpened) return
+        if (nativeUsbAudio.enabled || isAudioEffectSessionOpened) return
         val sessionId = localPlayer.audioSessionId
         if (sessionId <= 0) return
         isAudioEffectSessionOpened = true
@@ -6757,6 +6863,7 @@ class MusicService :
         reason: Int,
     ) {
         super.onMediaItemTransition(mediaItem, reason)
+        nativeUsbAudio.updateSource(null)
 
         if (sleepTimer.pauseWhenSongEnd) {
             pauseFromSleepTimer()
@@ -6951,8 +7058,12 @@ class MusicService :
         }
     }
 
-    override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) {
+    override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
         super.onPlaybackParametersChanged(playbackParameters)
+        if (nativeUsbAudio.enabled && playbackParameters != PlaybackParameters.DEFAULT) {
+            localPlayer.playbackParameters = PlaybackParameters.DEFAULT
+            return
+        }
         secondaryCrossfadePlayer?.playbackParameters = playbackParameters
     }
 
@@ -7932,29 +8043,20 @@ class MusicService :
     }
 
     private fun updateAudioOffload(enabled: Boolean) {
-        val effectiveEnabled = enabled && !crossfadeEnabled
-        runCatching {
-            val builder = localPlayer.trackSelectionParameters.buildUpon()
-            val audioOffloadPrefsClass = Class.forName("androidx.media3.common.AudioOffloadPreferences")
-            val audioOffloadPrefsBuilderClass = Class.forName("androidx.media3.common.AudioOffloadPreferences\$Builder")
-
-            val modeFieldName = if (effectiveEnabled) "AUDIO_OFFLOAD_MODE_ENABLED" else "AUDIO_OFFLOAD_MODE_DISABLED"
-            val mode = audioOffloadPrefsClass.getField(modeFieldName).getInt(null)
-
-            val prefsBuilder = audioOffloadPrefsBuilderClass.getDeclaredConstructor().newInstance()
-            audioOffloadPrefsBuilderClass.getMethod("setAudioOffloadMode", Int::class.javaPrimitiveType).invoke(prefsBuilder, mode)
-            val prefs = audioOffloadPrefsBuilderClass.getMethod("build").invoke(prefsBuilder)
-
-            val setMethod =
-                builder.javaClass.methods.firstOrNull { method ->
-                    method.name == "setAudioOffloadPreferences" && method.parameterTypes.size == 1
-                }
-            if (setMethod != null) {
-                setMethod.invoke(builder, prefs)
-                localPlayer.trackSelectionParameters = builder.build()
+        val effectiveEnabled = enabled && !crossfadeEnabled && !nativeUsbAudio.enabled
+        val mode =
+            if (effectiveEnabled) {
+                AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
+            } else {
+                AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
             }
-        }
-        localPlayer.setOffloadEnabled(effectiveEnabled)
+        localPlayer.trackSelectionParameters =
+            localPlayer.trackSelectionParameters.buildUpon()
+                .setAudioOffloadPreferences(
+                    AudioOffloadPreferences.Builder()
+                        .setAudioOffloadMode(mode)
+                        .build(),
+                ).build()
     }
 
     private fun updateWakeLock() {
@@ -7995,22 +8097,41 @@ class MusicService :
                 context: Context,
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean,
-            ) = DefaultAudioSink
-                .Builder(context)
-                .setEnableFloatOutput(false)
-                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                .setAudioProcessorChain(
-                    DefaultAudioSink.DefaultAudioProcessorChain(
-                        SilenceSkippingAudioProcessor(
-                            1_500_000L,
-                            0.35f,
-                            500_000L,
-                            10,
-                            150.toShort(),
+            ) = BitPerfectAudioSink(
+                normalSink = DefaultAudioSink
+                    .Builder(context)
+                    .setEnableFloatOutput(false)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioOutputProvider(nativeUsbAudio.createAudioOutputProvider())
+                    .setAudioProcessorChain(
+                        DefaultAudioSink.DefaultAudioProcessorChain(
+                            SilenceSkippingAudioProcessor(
+                                1_500_000L,
+                                0.35f,
+                                500_000L,
+                                10,
+                                150.toShort(),
+                            ),
+                            SonicAudioProcessor(),
                         ),
-                        SonicAudioProcessor(),
-                    ),
-                ).build()
+                    ).build(),
+                nativeSink = DefaultAudioSink
+                    .Builder(context)
+                    .setEnableFloatOutput(true)
+                    .setEnableAudioTrackPlaybackParams(true)
+                    .setAudioOutputProvider(
+                        directUsbAudio.provider(nativeUsbAudio.createAudioOutputProvider()) {
+                            when (nativeUsbAudio.state.value.sourceFormat?.pcmEncoding) {
+                                C.ENCODING_PCM_16BIT -> 16
+                                C.ENCODING_PCM_24BIT -> 24
+                                C.ENCODING_PCM_32BIT, C.ENCODING_PCM_FLOAT -> 32
+                                else -> null
+                            }
+                        },
+                    )
+                    .build(),
+                bitPerfectEnabled = { nativeUsbAudio.enabled },
+            )
         }
 
     override fun onPlaybackStatsReady(
@@ -8467,6 +8588,8 @@ class MusicService :
             player.release()
         } catch (_: Exception) {
         }
+        nativeUsbAudio.release()
+        directUsbAudio.release()
         nextStreamPreloader.cancel()
         scopeJob.cancel()
     }

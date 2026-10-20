@@ -7,6 +7,7 @@ Listen to <b>YouTube Music</b> and music stored on your device, with live synced
 <ul>
 <li>Ad-free playback with background listening</li>
 <li>Play local music files stored on your device</li>
+<li>Use bit-perfect playback with compatible native output or direct USB bypass</li>
 <li>Access your YouTube playlists, liked songs, and subscriptions</li>
 <li>Connect with your YouTube Music account</li>
 <li>Fast startup and lightweight performance</li>

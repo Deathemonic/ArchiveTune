@@ -32,7 +32,7 @@ fun FloatingBarBlurBackground(
     val blurStyle = remember(isAcrylic, surfaceColor) {
         HazeBlurStyle {
             backgroundColor(surfaceColor)
-            blurRadius(if (isAcrylic) 32.dp else 20.dp)
+            blurRadius(if (isAcrylic) 32.dp else 8.dp)
             noiseFactor(if (isAcrylic) 0.12f else 0f)
             colorEffects(
                 listOf(

@@ -49,12 +49,33 @@ fun LibraryChipOrderDialog(
     onDismiss: () -> Unit,
     onConfirm: (List<LibraryFilter>) -> Unit,
 ) {
-    val filters = remember { mutableStateListOf(*initialOrder.toTypedArray()) }
+    ItemOrderDialog(
+        title = stringResource(R.string.arrange_library_chips),
+        initialOrder = initialOrder,
+        itemKey = { it.name },
+        itemText = { stringResource(it.labelResId()) },
+        onDismiss = onDismiss,
+        onConfirm = onConfirm,
+    )
+}
+
+@Composable
+fun <T : Any> ItemOrderDialog(
+    title: String,
+    initialOrder: List<T>,
+    itemKey: (T) -> Any,
+    itemText: @Composable (T) -> String,
+    onDismiss: () -> Unit,
+    onConfirm: (List<T>) -> Unit,
+    pinnedItems: List<String> = emptyList(),
+    pinnedItemDescription: String? = null,
+) {
+    val items = remember(initialOrder) { mutableStateListOf<T>().apply { addAll(initialOrder) } }
     val lazyListState = rememberLazyListState()
     val reorderableState =
         rememberReorderableLazyListState(lazyListState) { from, to ->
-            val filter = filters.removeAt(from.index)
-            filters.add(to.index, filter)
+            val item = items.removeAt(from.index)
+            items.add(to.index, item)
         }
 
     DefaultDialog(
@@ -69,7 +90,7 @@ fun LibraryChipOrderDialog(
             }
             Spacer(Modifier.weight(1f))
             TextButton(
-                onClick = { onConfirm(filters.toList()) },
+                onClick = { onConfirm(items.toList()) },
                 shapes = ButtonDefaults.shapes(),
             ) {
                 Text(stringResource(android.R.string.ok))
@@ -78,7 +99,7 @@ fun LibraryChipOrderDialog(
     ) {
         Column(modifier = Modifier.padding(top = 4.dp)) {
             Text(
-                text = stringResource(R.string.arrange_library_chips),
+                text = title,
                 style = MaterialTheme.typography.headlineSmall,
                 modifier = Modifier.padding(bottom = 12.dp),
             )
@@ -91,11 +112,11 @@ fun LibraryChipOrderDialog(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 itemsIndexed(
-                    items = filters,
-                    key = { _, filter -> filter.name },
-                    contentType = { _, _ -> "library_chip_order_item" },
-                ) { index, filter ->
-                    ReorderableItem(reorderableState, key = filter.name) {
+                    items = items,
+                    key = { _, item -> itemKey(item) },
+                    contentType = { _, _ -> "ordered_item" },
+                ) { index, item ->
+                    ReorderableItem(reorderableState, key = itemKey(item)) {
                         val contentColor = MaterialTheme.colorScheme.onSurface
 
                         Row(
@@ -115,7 +136,7 @@ fun LibraryChipOrderDialog(
                                 modifier = Modifier.size(20.dp),
                             )
                             Text(
-                                text = stringResource(filter.labelResId()),
+                                text = itemText(item),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = contentColor,
                                 modifier = Modifier.weight(1f),
@@ -126,24 +147,35 @@ fun LibraryChipOrderDialog(
                                 tint = contentColor.copy(alpha = 0.6f),
                                 modifier =
                                     Modifier
-                                        .size(20.dp)
-                                        .draggableHandle(),
+                                        .size(48.dp)
+                                        .draggableHandle()
+                                        .padding(14.dp),
                             )
                         }
                     }
+                }
+            }
+            pinnedItems.forEachIndexed { index, text ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("${items.size + index + 1}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.size(20.dp))
+                    Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Icon(painterResource(R.drawable.lock), pinnedItemDescription, modifier = Modifier.size(20.dp))
                 }
             }
         }
     }
 }
 
-private fun LibraryFilter.labelResId(): Int =
-    when (this) {
-        LibraryFilter.LIBRARY -> R.string.filter_library
-        LibraryFilter.PLAYLISTS -> R.string.playlists
-        LibraryFilter.PODCASTS -> R.string.podcast
-        LibraryFilter.SPOTIFY -> R.string.spotify_playlists
-        LibraryFilter.SONGS -> R.string.songs
-        LibraryFilter.ARTISTS -> R.string.artists
-        LibraryFilter.ALBUMS -> R.string.albums
-    }
+private fun LibraryFilter.labelResId(): Int = when (this) {
+    LibraryFilter.LIBRARY -> R.string.filter_library
+    LibraryFilter.PLAYLISTS -> R.string.playlists
+    LibraryFilter.PODCASTS -> R.string.podcast
+    LibraryFilter.SPOTIFY -> R.string.spotify_playlists
+    LibraryFilter.SONGS -> R.string.songs
+    LibraryFilter.ARTISTS -> R.string.artists
+    LibraryFilter.ALBUMS -> R.string.albums
+}

@@ -96,7 +96,7 @@ class App :
     @Inject
     lateinit var restoreLauncherEntry: RestoreLauncherEntryUseCase
 
-    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    internal val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     @Volatile private var isInitialized = false
     private val didRunImageCacheTrim = AtomicBoolean(false)

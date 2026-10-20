@@ -75,6 +75,7 @@ import moe.rukamori.archivetune.ui.screens.settings.LyricsSettings
 import moe.rukamori.archivetune.ui.screens.settings.MusicTogetherScreen
 import moe.rukamori.archivetune.ui.screens.settings.PalettePickerScreen
 import moe.rukamori.archivetune.ui.screens.settings.PlayerSettings
+import moe.rukamori.archivetune.ui.screens.settings.SourcesSettings
 import moe.rukamori.archivetune.ui.screens.settings.PrivacySettings
 import moe.rukamori.archivetune.ui.screens.settings.SettingsScreen
 import moe.rukamori.archivetune.ui.screens.settings.StorageSettings
@@ -437,6 +438,12 @@ fun NavGraphBuilder.navigationBuilder(
     }
     composable("settings/internet") {
         InternetSettings(navController)
+    }
+    composable(TIDAL_LOGIN_ROUTE) {
+        TidalLoginScreen(navController)
+    }
+    composable("settings/sources") {
+        SourcesSettings(navController)
     }
     composable("settings/player") {
         PlayerSettings(navController)

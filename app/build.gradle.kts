@@ -363,6 +363,7 @@ dependencies {
     implementation("androidx.glance:glance-material3:1.2.0")
 
     implementation(libs.media3)
+    implementation("androidx.media3:media3-exoplayer-dash:${libs.versions.media3.get()}")
     implementation("androidx.media3:media3-exoplayer-hls:${libs.versions.media3.get()}")
     implementation(libs.media3.session)
     implementation(libs.car.app)

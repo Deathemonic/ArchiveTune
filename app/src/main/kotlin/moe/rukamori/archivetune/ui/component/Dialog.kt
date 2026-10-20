@@ -117,7 +117,7 @@ fun DefaultDialog(
 
                     Column(
                         horizontalAlignment = horizontalAlignment,
-                        modifier = bodyModifier,
+                        modifier = bodyModifier.fillMaxWidth(),
                     ) {
                         if (icon != null) {
                             CompositionLocalProvider(LocalContentColor provides AlertDialogDefaults.iconContentColor) {

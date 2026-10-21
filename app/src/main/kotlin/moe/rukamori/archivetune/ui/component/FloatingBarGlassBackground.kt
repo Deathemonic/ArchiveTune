@@ -14,10 +14,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import dev.chrisbanes.haze.ExperimentalHazeApi
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.glass.GlassDefaults
 import dev.chrisbanes.haze.glass.GlassStyle
 import dev.chrisbanes.haze.glass.hazeGlass
 
@@ -29,13 +31,21 @@ fun FloatingBarGlassBackground(
     pureBlack: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val surfaceColor = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+    val colorScheme = MaterialTheme.colorScheme
+    val surfaceColor = if (pureBlack) Color.Black else colorScheme.surfaceContainerHigh
+    val isDarkSurface = pureBlack || colorScheme.surface.luminance() < colorScheme.onSurface.luminance()
     val hazeInput = remember(hazeState) { HazeInput.Sources(hazeState) }
-    val glassStyle = remember(shape, surfaceColor) {
+    val glassStyle = remember(shape, surfaceColor, isDarkSurface) {
         GlassStyle.regular.then {
             shape(shape)
             backgroundColor(surfaceColor)
-            tint(surfaceColor.copy(alpha = 0.3f))
+            tint(surfaceColor.copy(alpha = 0.7f))
+            whitePoint(if (isDarkSurface) -0.22f else GlassDefaults.whitePoint)
+            contrast(if (isDarkSurface) 0.08f else GlassDefaults.contrast)
+            chromaMultiplier(if (isDarkSurface) 1.1f else GlassDefaults.chromaMultiplier)
+            specularIntensity(if (isDarkSurface) 0.38f else GlassDefaults.specularIntensity)
+            edgeShadow(if (isDarkSurface) Color.Black.copy(alpha = 0.32f) else GlassDefaults.edgeShadow)
+            ambientResponse(if (isDarkSurface) 0.08f else GlassDefaults.ambientResponse)
         }
     }
     Box(

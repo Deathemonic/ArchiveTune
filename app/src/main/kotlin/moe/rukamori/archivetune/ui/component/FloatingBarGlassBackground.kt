@@ -19,7 +19,6 @@ import dev.chrisbanes.haze.ExperimentalHazeApi
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.glass.GlassDefaults
 import dev.chrisbanes.haze.glass.GlassStyle
 import dev.chrisbanes.haze.glass.hazeGlass
 
@@ -36,16 +35,16 @@ fun FloatingBarGlassBackground(
     val isDarkSurface = pureBlack || colorScheme.surface.luminance() < colorScheme.onSurface.luminance()
     val hazeInput = remember(hazeState) { HazeInput.Sources(hazeState) }
     val glassStyle = remember(shape, surfaceColor, isDarkSurface) {
-        GlassStyle.regular.then {
+        GlassStyle.clear.then {
             shape(shape)
             backgroundColor(surfaceColor)
-            tint(surfaceColor.copy(alpha = 0.7f))
-            whitePoint(if (isDarkSurface) -0.22f else GlassDefaults.whitePoint)
-            contrast(if (isDarkSurface) 0.08f else GlassDefaults.contrast)
-            chromaMultiplier(if (isDarkSurface) 1.1f else GlassDefaults.chromaMultiplier)
-            specularIntensity(if (isDarkSurface) 0.38f else GlassDefaults.specularIntensity)
-            edgeShadow(if (isDarkSurface) Color.Black.copy(alpha = 0.32f) else GlassDefaults.edgeShadow)
-            ambientResponse(if (isDarkSurface) 0.08f else GlassDefaults.ambientResponse)
+            tint(surfaceColor.copy(alpha = if (isDarkSurface) 0.2f else 0.16f))
+            whitePoint(if (isDarkSurface) -0.08f else 0.08f)
+            contrast(0f)
+            chromaMultiplier(1f)
+            specularIntensity(0.32f)
+            edgeShadow(Color.Black.copy(alpha = 0.06f))
+            ambientResponse(0.12f)
         }
     }
     Box(

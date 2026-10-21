@@ -85,7 +85,8 @@ class ModuleMediaStorage @Inject constructor(
         database.withTransaction {
             upsert(FormatEntity(selection.originalId, -1, selection.stream.mimeType, selection.stream.codecs,
                 selection.stream.bitrate, selection.stream.sampleRate, selection.stream.contentLength, null, null, null,
-                selection.module.manifest.name, selection.module.id, selection.stream.variant))
+                listOf(selection.module.manifest.name, selection.stream.upstreamProvider).filter(String::isNotBlank)
+                    .distinct().joinToString(" \u00b7 "), selection.module.id, selection.stream.variant))
         }
     }
 

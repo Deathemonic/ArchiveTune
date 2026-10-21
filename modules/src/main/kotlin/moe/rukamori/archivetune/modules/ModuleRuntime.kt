@@ -44,45 +44,57 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
         } ?: throw ModuleException(ModuleFailure.TIMEOUT)
 
     suspend fun search(id: String, source: String, origin: String, query: String, settings: Map<String, String>): List<ModuleTrack> {
-        val result = call(id, source, origin, "searchTracks", JSONArray().put(query).put(25).put(context(settings)))
+        val result = call(id, source, origin, "searchTracks", JSONArray().put(query).put(10).put(context(settings)))
         val tracks = (result as? JSONObject)?.optJSONArray("tracks") ?: result as? JSONArray ?: JSONArray()
         return (0 until minOf(tracks.length(), 100)).mapNotNull { index ->
             val track = tracks.optJSONObject(index) ?: return@mapNotNull null
-            val trackId = track.optString("id").takeIf(String::isNotBlank) ?: return@mapNotNull null
-            val artist = track.opt("artists") ?: track.opt("artist")
+            val trackId = track.text("id").takeIf(String::isNotBlank) ?: return@mapNotNull null
+            val artist = track.opt("artists")?.takeUnless { it == JSONObject.NULL } ?: track.opt("artist")
             val artists = when (artist) {
                 is JSONArray -> (0 until artist.length()).mapNotNull { position ->
                     val item = artist.opt(position)
-                    (if (item is JSONObject) item.optString("name") else item?.toString())?.takeIf(String::isNotBlank)
+                    (if (item is JSONObject) item.text("name") else item?.takeUnless { it == JSONObject.NULL }?.toString())?.takeIf(String::isNotBlank)
                 }
-                is JSONObject -> listOfNotNull(artist.optString("name").takeIf(String::isNotBlank))
-                else -> listOfNotNull(artist?.toString()?.takeIf(String::isNotBlank))
+                is JSONObject -> listOfNotNull(artist.text("name").takeIf(String::isNotBlank))
+                else -> listOfNotNull(artist?.takeUnless { it == JSONObject.NULL }?.toString()?.takeIf(String::isNotBlank))
             }
-            ModuleTrack(trackId, track.optString("title"), artists, track.optString("album").takeIf(String::isNotBlank),
-                track.optInt("duration").takeIf { it > 0 },
+            ModuleTrack(trackId, track.text("title").ifBlank { track.text("name") }, artists,
+                (track.optJSONObject("album")?.let { it.text("title").ifBlank { it.text("name") } }
+                    ?: track.text("album")).takeIf(String::isNotBlank),
+                (if (track.has("durationMs")) track.optLong("durationMs").div(1000).toInt()
+                    else track.optInt("duration")).takeIf { it > 0 },
                 if (track.has("explicit") && !track.isNull("explicit")) track.optBoolean("explicit") else null,
-                track.optString("isrc").takeIf(String::isNotBlank))
+                track.text("isrc").takeIf(String::isNotBlank))
         }
     }
 
-    suspend fun stream(id: String, source: String, origin: String, trackId: String, settings: Map<String, String>): ModuleStream {
+    suspend fun stream(id: String, source: String, origin: String, trackId: String, settings: Map<String, String>, metadata: ModuleTrack? = null): ModuleStream {
         val quality = settings["quality"]?.let(::parseJsonValue) ?: JSONObject.NULL
-        val value = call(id, source, origin, "getTrackStreamUrl", JSONArray().put(trackId).put(quality).put(context(settings))) as? JSONObject
+        val value = call(id, source, origin, "getTrackStreamUrl", JSONArray().put(trackId).put(quality).put(context(settings, metadata))) as? JSONObject
             ?: throw ModuleException(ModuleFailure.EXECUTION)
-        val url = ModuleHttpClient.webUrl(value.optString("streamUrl", value.optString("url")))
+        val url = ModuleHttpClient.webUrl(value.text("streamUrl").ifBlank { value.text("url") })
         val track = value.optJSONObject("track") ?: JSONObject()
-        val headers = value.optJSONObject("headers") ?: value.optJSONObject("requestHeaders") ?: track.optJSONObject("headers") ?: JSONObject()
-        val mime = value.optString("mimeType", track.optString("mimeType")).ifBlank {
-            when (URI(url).path.substringAfterLast('.').lowercase(java.util.Locale.ROOT)) {
-                "m3u8" -> "application/x-mpegURL"
-                "mpd" -> "application/dash+xml"
-                "flac" -> "audio/flac"
-                "m4a", "mp4" -> "audio/mp4"
-                "opus", "ogg" -> "audio/ogg"
-                "wav" -> "audio/wav"
-                "aac" -> "audio/aac"
-                "mp3" -> "audio/mpeg"
-                else -> "application/octet-stream"
+        val headers = java.util.TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER)
+        listOf(track.optJSONObject("headers"), value.optJSONObject("streamHeaders"),
+            value.optJSONObject("requestHeaders"), value.optJSONObject("headers")).forEach { declared ->
+            declared?.keys()?.forEach { key -> if (!declared.isNull(key)) headers[key] = declared.getString(key) }
+        }
+        value.text("userAgent").takeIf(String::isNotBlank)?.let { headers.putIfAbsent("User-Agent", it) }
+        val mime = value.text("mimeType").ifBlank { track.text("mimeType") }.ifBlank {
+            when (value.text("streamType").lowercase(java.util.Locale.ROOT)) {
+                "hls" -> "application/x-mpegURL"
+                "dash" -> "application/dash+xml"
+                else -> when (URI(url).path.orEmpty().substringAfterLast('.').lowercase(java.util.Locale.ROOT)) {
+                    "m3u8" -> "application/x-mpegURL"
+                    "mpd" -> "application/dash+xml"
+                    "flac" -> "audio/flac"
+                    "m4a", "mp4" -> "audio/mp4"
+                    "opus", "ogg" -> "audio/ogg"
+                    "wav" -> "audio/wav"
+                    "aac" -> "audio/aac"
+                    "mp3" -> "audio/mpeg"
+                    else -> "application/octet-stream"
+                }
             }
         }
         val now = System.currentTimeMillis()
@@ -90,12 +102,17 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
         val expiry = value.optLong("expiresAtMs", value.optLong("expiresAt", 0)).let {
             when { it <= 0 -> now + lifetime * 1000; it < 10_000_000_000L -> it * 1000; else -> it }
         }
-        if (expiry <= System.currentTimeMillis()) throw ModuleException(ModuleFailure.EXECUTION)
-        return ModuleStream(url, headers.keys().asSequence().associateWith(headers::getString), mime,
-            value.optString("codecs", track.optString("codecs")), track.optInt("bitrate", value.optInt("bitrate")),
-            track.optDouble("sampleRate").takeIf { it.isFinite() && it > 0 }?.let { if (it < 1000) (it * 1000).toInt() else it.toInt() },
+        if (expiry <= now) throw ModuleException(ModuleFailure.EXECUTION)
+        return ModuleStream(url, headers.toMap(), mime,
+            value.text("codecs").ifBlank { value.text("codec") }.ifBlank { track.text("codecs") }.ifBlank { track.text("codec") },
+            track.optInt("bitrate", value.optInt("bitrate")),
+            track.optDouble("sampleRate", value.optDouble("sampleRate")).takeIf { it.isFinite() && it > 0 }
+                ?.let { if (it < 1000) (it * 1000).toInt() else it.toInt() },
             value.optLong("contentLength", track.optLong("contentLength", 0)), expiry,
-            value.optString("variant", track.optString("audioQuality", track.optString("format", mime))))
+            value.text("variant").ifBlank { value.text("audioQuality") }.ifBlank { track.text("audioQuality") }
+                .ifBlank { track.text("formatId") }.ifBlank { track.text("format") }.ifBlank { mime },
+            value.text("provider").ifBlank { track.text("provider") },
+            track.text("sourceId").ifBlank { track.text("id") }.ifBlank { trackId })
     }
 
     suspend fun unload(id: String) {
@@ -207,9 +224,20 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
         return ModuleManifest.parse(JSONObject(manifest))
     }
 
-    private fun context(settings: Map<String, String>): JSONObject = JSONObject().put("settings", JSONObject().apply {
-        settings.forEach { (key, value) ->
-            put(key, JSONObject().put("value", parseJsonValue(value)))
+    private fun JSONObject.text(key: String): String = when (val value = opt(key)) {
+        is String, is Number -> value.toString()
+        else -> ""
+    }
+
+    private fun context(settings: Map<String, String>, track: ModuleTrack? = null): JSONObject = JSONObject()
+        .put("settings", JSONObject().apply {
+            settings.forEach { (key, value) -> put(key, JSONObject().put("value", parseJsonValue(value))) }
+        }).apply {
+            track?.let {
+                val metadata = JSONObject().put("id", it.id).put("title", it.title)
+                    .put("artist", it.artists.joinToString(", ")).put("artists", JSONArray(it.artists))
+                    .put("album", it.album).put("duration", it.durationSeconds).put("explicit", it.explicit).put("isrc", it.identifier)
+                put("track", metadata).put("metadata", metadata).put("item", metadata)
+            }
         }
-    })
 }

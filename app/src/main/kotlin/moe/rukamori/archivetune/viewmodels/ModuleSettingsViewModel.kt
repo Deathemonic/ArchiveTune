@@ -43,7 +43,7 @@ enum class ModuleSettingsDialog { ADD, MODULE_URL, CATALOG_URL, REVIEW, REMOVE_M
 
 @Immutable
 data class ModuleRowUi(val id: String, val name: String, val subtitle: String, val enabled: Boolean,
-    val position: Int, @param:StringRes val status: Int, val canUpdate: Boolean)
+    val position: Int, @param:StringRes val status: Int, val canUpdate: Boolean, val playbackStatus: Boolean)
 
 @Immutable
 data class ModuleCatalogRowUi(val id: String, val name: String, val origin: String, val refreshed: String, val count: Int)
@@ -66,7 +66,12 @@ data class ModuleFieldUi(val key: String, val label: String, val description: St
 @Immutable
 data class ModuleDetailUi(val row: ModuleRowUi, val description: String, val origin: String,
     val capabilities: ImmutableList<Int>, val fields: ImmutableList<ModuleFieldUi>, val qualityDeclared: Boolean,
-    val dirty: Boolean, val diagnosticTime: String?, val elapsedMs: Long, @param:StringRes val failure: Int?)
+    val dirty: Boolean, val initialization: ModuleDiagnosticUi?, val playback: ModuleDiagnosticUi?)
+
+@Immutable
+data class ModuleDiagnosticUi(@param:StringRes val status: Int, val time: String, val elapsedMs: Long,
+    @param:StringRes val failure: Int?, @param:StringRes val phase: Int?, @param:StringRes val rejection: Int?,
+    val candidateCount: Int?, val upstream: String, val variant: String, val code: String)
 
 @Immutable
 data class ModuleCatalogDetailUi(val row: ModuleCatalogRowUi, val entries: ImmutableList<ModuleCatalogEntryUi>)
@@ -129,7 +134,7 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
     private val eventChannel = Channel<ModuleSettingsEvent>(Channel.BUFFERED)
     val events = eventChannel.receiveAsFlow()
     private var registry = ModuleRegistry()
-    private var health: Map<String, ModuleDiagnostic> = emptyMap()
+    private var health: Map<String, ModuleHealth> = emptyMap()
     private var observer: Job? = null
     private var operation: Job? = null
     private var tab = 0
@@ -327,13 +332,17 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
 
     private fun render() {
         val modules = draftOrder?.mapNotNull { id -> registry.modules.firstOrNull { it.id == id } } ?: registry.modules
-        val rows = modules.mapIndexed { index, module -> ModuleRowUi(module.id, module.manifest.name,
-            listOf(module.manifest.author, module.manifest.version).filter(String::isNotBlank).joinToString(" · "),
-            module.enabled, index + 1, if (busy == module.id) R.string.modules_checking else statusResource(health[module.id]?.status), module.updateUrl.isNotBlank()) }
+        val rows = modules.mapIndexed { index, module ->
+            val result = currentHealth(module)
+            ModuleRowUi(module.id, module.manifest.name,
+                listOf(module.manifest.author, module.manifest.version).filter(String::isNotBlank).joinToString(" \u00b7 "),
+                module.enabled, index + 1, if (busy == module.id) R.string.modules_checking else statusResource((result.playback ?: result.check)?.status),
+                module.updateUrl.isNotBlank(), busy != module.id && result.playback != null)
+        }
         val catalogs = registry.catalogs.map { ModuleCatalogRowUi(it.id, it.name, safeOrigin(it.url), date(it.refreshedAtMs), it.entries.size) }
         val selected = modules.firstOrNull { it.id == selectedId }
         val module = selected?.let { item ->
-            val diagnostic = health[item.id]
+            val diagnostic = currentHealth(item)
             ModuleDetailUi(rows.first { it.id == item.id }, item.manifest.description, safeOrigin(item.origin), capabilities(item.manifest.capabilities),
                 ImmutableList.copyOf(item.manifest.settings.map { field ->
                     val value = draft[field.key] ?: field.defaultJson
@@ -346,14 +355,14 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
                         if (valid) null else if (field.required && (parsed == "" || parsed == JSONObject.NULL)) R.string.modules_field_required else R.string.modules_field_invalid,
                         ImmutableList.copyOf(field.options.map { ModuleOptionUi(it.label, it.valueJson) }))
                 }), item.manifest.settings.any { it.key.contains("quality", true) }, draft != item.configuration,
-                diagnostic?.let { date(it.atMs) }, diagnostic?.elapsedMs ?: 0, diagnostic?.failure?.let { failureResource(ModuleException(it)) })
+                diagnostic.check?.let(::diagnosticUi), diagnostic.playback?.let(::diagnosticUi))
         }
         val catalog = registry.catalogs.firstOrNull { it.id == selectedId }?.let { item ->
             ModuleCatalogDetailUi(catalogs.first { it.id == item.id }, ImmutableList.copyOf(item.entries.map { entry ->
                 ModuleCatalogEntryUi(entry.downloadUrl ?: entry.id, entry.name, listOf(entry.author, entry.version).filter(String::isNotBlank).joinToString(" · "),
                     entry.description, entry.supported && entry.downloadUrl !in unsupportedDownloads, registry.modules.any { it.origin == entry.downloadUrl || it.updateUrl == entry.downloadUrl },
                     capabilities(entry.capabilities), entry.downloadUrl, (entry.downloadUrl ?: entry.id) in expandedEntries)
-            }))
+            }.sortedByDescending { it.installed }))
         }
         val review = when (val value = pending) {
             is ModuleImport.Provider -> {
@@ -372,11 +381,44 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
         mutableState.value = if (modules.isEmpty() && registry.catalogs.isEmpty() && page == ModuleSettingsPage.HOME) ModuleSettingsState.Empty(model) else ModuleSettingsState.Success(model)
     }
 
+    private fun currentHealth(module: InstalledModule): ModuleHealth {
+        val result = health[module.id]
+        return ModuleHealth(result?.check?.takeIf { it.revision == module.revision }, result?.playback?.takeIf { it.revision == module.revision })
+    }
+
+    private fun diagnosticUi(value: ModuleDiagnostic): ModuleDiagnosticUi = ModuleDiagnosticUi(statusResource(value.status), date(value.atMs), value.elapsedMs,
+        value.failure?.let { failureResource(ModuleException(it)) }, when (value.phase) {
+            ModuleResolutionPhase.SEARCH -> R.string.modules_phase_search
+            ModuleResolutionPhase.MATCH -> R.string.modules_phase_match
+            ModuleResolutionPhase.STREAM -> R.string.modules_phase_stream
+            null -> null
+        }, when (value.rejection) {
+            ModuleMatchRejection.NO_RESULTS -> R.string.modules_match_empty
+            ModuleMatchRejection.METADATA -> R.string.modules_match_metadata
+            ModuleMatchRejection.TITLE -> R.string.modules_match_title
+            ModuleMatchRejection.ARTIST -> R.string.modules_match_artist
+            ModuleMatchRejection.RECORDING -> R.string.modules_match_recording
+            ModuleMatchRejection.DURATION -> R.string.modules_match_duration
+            ModuleMatchRejection.EXPLICIT -> R.string.modules_match_explicit
+            null -> null
+        }, value.candidateCount.takeIf { value.phase != null && value.phase != ModuleResolutionPhase.SEARCH },
+        diagnosticLabel(value.upstream), diagnosticLabel(value.variant), value.code)
+
+    private fun diagnosticLabel(value: String): String = value.takeIf {
+        it.length <= 96 && it.matches(Regex("[\\p{L}\\p{N} _().+/-]*"))
+    }.orEmpty()
+
     private fun copyDiagnostics() {
         val entries = registry.modules.filter { selectedId == null || it.id == selectedId }
         val report = entries.joinToString("\n") { module ->
-            val check = health[module.id]
-            "${module.manifest.id} ${module.manifest.version}: ${check?.status?.name ?: "NOT_CHECKED"}; elapsedMs=${check?.elapsedMs ?: 0}; failure=${check?.failure?.name.orEmpty()}"
+            val result = currentHealth(module)
+            val checks = listOf("initialization" to result.check, "playback" to result.playback).joinToString("\n") { (label, value) ->
+                "$label=${value?.status?.name ?: "NOT_CHECKED"}; atMs=${value?.atMs ?: 0}; elapsedMs=${value?.elapsedMs ?: 0}; " +
+                    "failure=${value?.failure?.name.orEmpty()}; phase=${value?.phase?.name.orEmpty()}; candidates=${value?.candidateCount ?: 0}; " +
+                    "rejection=${value?.rejection?.name.orEmpty()}; code=${value?.code.orEmpty()}; " +
+                    "upstream=${diagnosticLabel(value?.upstream.orEmpty())}; variant=${diagnosticLabel(value?.variant.orEmpty())}"
+            }
+            "${module.manifest.id} ${module.manifest.version}\n$checks"
         }
         val text = listOfNotNull(operationFailure?.code, report.takeIf(String::isNotBlank)).joinToString("\n")
         eventChannel.trySend(ModuleSettingsEvent.Copy(text))

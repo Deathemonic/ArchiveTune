@@ -18,7 +18,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.db.MusicDatabase
 import moe.rukamori.archivetune.models.MediaMetadata
-import moe.rukamori.archivetune.utils.FuzzyMatcher
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import java.security.MessageDigest
 import javax.inject.Inject
@@ -29,12 +28,12 @@ data class ModuleMatchMetadata(
     val artists: List<String>,
     val album: String?,
     val duration: Int,
-    val explicit: Boolean,
+    val explicit: Boolean?,
     val eligible: Boolean,
 )
 
 fun MediaMetadata.moduleMatchMetadata() = ModuleMatchMetadata(title, artists.map { it.name }, album?.title,
-    duration, explicit, !id.isLocalMediaId() && !isPodcast && !isMusicVideo)
+    duration, explicit.takeIf { it }, !id.isLocalMediaId() && !isPodcast && !isMusicVideo)
 
 data class ModuleAudioSelection(
     val originalId: String,
@@ -42,18 +41,41 @@ data class ModuleAudioSelection(
     val trackId: String,
     val stream: ModuleStream,
     val cacheKey: String,
+    val metadata: ModuleTrack? = null,
 )
 
 enum class ModuleCheckStatus { READY, CONFIGURATION, UNAVAILABLE, FAILED, NO_MATCH, RESOLVED, TIMEOUT }
 
-data class ModuleDiagnostic(val status: ModuleCheckStatus, val atMs: Long, val elapsedMs: Long, val failure: ModuleFailure? = null)
+enum class ModuleResolutionPhase { SEARCH, MATCH, STREAM }
+enum class ModuleMatchRejection { NO_RESULTS, METADATA, TITLE, ARTIST, RECORDING, DURATION, EXPLICIT }
+
+data class ModuleDiagnostic(
+    val status: ModuleCheckStatus,
+    val atMs: Long,
+    val elapsedMs: Long,
+    val failure: ModuleFailure? = null,
+    val revision: String? = null,
+    val phase: ModuleResolutionPhase? = null,
+    val candidateCount: Int = 0,
+    val rejection: ModuleMatchRejection? = null,
+    val upstream: String = "",
+    val variant: String = "",
+    val code: String = "",
+)
+
+data class ModuleHealth(val check: ModuleDiagnostic?, val playback: ModuleDiagnostic?)
 
 @Singleton
 class ModuleDiagnostics @Inject constructor() {
     private val mutableState = MutableStateFlow<Map<String, ModuleDiagnostic>>(emptyMap())
+    private val mutableChecks = MutableStateFlow<Map<String, ModuleDiagnostic>>(emptyMap())
     val state = mutableState.asStateFlow()
+    val checks = mutableChecks.asStateFlow()
     fun record(id: String, diagnostic: ModuleDiagnostic) {
         mutableState.update { it + (id to diagnostic) }
+    }
+    fun recordCheck(id: String, diagnostic: ModuleDiagnostic) {
+        mutableChecks.update { it + (id to diagnostic) }
     }
 }
 
@@ -62,7 +84,7 @@ class ModuleTrackMetadataRepository @Inject constructor(private val database: Mu
         database.withTransaction {
             getSongByIdBlocking(id)?.let { item ->
                 ModuleMatchMetadata(item.title, item.artists.map { it.name }, item.song.albumName, item.song.duration,
-                    item.song.explicit, !item.song.isLocal && !item.song.isPodcast && !item.song.isMusicVideo)
+                    item.song.explicit.takeIf { it }, !item.song.isLocal && !item.song.isPodcast && !item.song.isMusicVideo)
             }
         }
     }
@@ -75,7 +97,7 @@ class ResolveModuleAudioUseCase @Inject constructor(
     private val diagnostics: ModuleDiagnostics,
 ) {
     private val mutex = Mutex()
-    private data class Entry(val moduleRevision: String, val metadata: ModuleMatchMetadata, val selection: ModuleAudioSelection?, val expiresAtMs: Long)
+    private data class Entry(val moduleId: String, val moduleRevision: String, val metadata: ModuleMatchMetadata, val selection: ModuleAudioSelection?, val expiresAtMs: Long)
     private val cache = java.util.concurrent.ConcurrentHashMap<String, Entry>()
 
     fun enabled(): Boolean = repository.state.value?.let { it.enabled && it.modules.any { module -> module.enabled } } == true
@@ -114,29 +136,41 @@ class ResolveModuleAudioUseCase @Inject constructor(
                         continue
                     }
                     val started = System.currentTimeMillis()
+                    var phase = ModuleResolutionPhase.SEARCH
+                    var candidateCount = 0
                     try {
                         var completed = false
                         val candidate = withTimeoutOrNull(15_000) {
                             ModuleRepository.validateConfiguration(module.manifest, module.configuration)
                             val tracks = repository.runtime.search(engineId(module), module.source, module.origin,
-                                "${target.title} ${target.artists.joinToString(" ")}", module.configuration)
-                            val match = tracks.mapNotNull { track -> score(target, track)?.let { track to it } }
-                                .maxByOrNull { it.second }?.first
+                                ModuleTrackMatcher.query(target), module.configuration)
+                            candidateCount = tracks.size
+                            phase = ModuleResolutionPhase.MATCH
+                            val evaluated = tracks.map { it to ModuleTrackMatcher.evaluate(target, it) }
+                            val match = evaluated.filter { it.second.rejection == null }.maxByOrNull { it.second.score }?.first
                             val result = if (match == null) {
-                                diagnostics.record(module.id, ModuleDiagnostic(ModuleCheckStatus.NO_MATCH, System.currentTimeMillis(), System.currentTimeMillis() - started))
+                                val rejection = evaluated.maxByOrNull { it.second.score }?.second?.rejection ?: ModuleMatchRejection.NO_RESULTS
+                                diagnostics.record(module.id, ModuleDiagnostic(ModuleCheckStatus.NO_MATCH, System.currentTimeMillis(),
+                                    System.currentTimeMillis() - started, revision = module.revision, phase = phase,
+                                    candidateCount = candidateCount, rejection = rejection))
                                 null
-                            } else selection(id, module, match.id)
+                            } else {
+                                phase = ModuleResolutionPhase.STREAM
+                                selection(id, module, match.id, match)
+                            }
                             completed = true
                             result
                         }
-                        if (!completed) diagnostics.record(module.id, ModuleDiagnostic(ModuleCheckStatus.TIMEOUT, System.currentTimeMillis(), System.currentTimeMillis() - started, ModuleFailure.TIMEOUT))
+                        if (!completed) diagnostics.record(module.id, ModuleDiagnostic(ModuleCheckStatus.TIMEOUT, System.currentTimeMillis(), System.currentTimeMillis() - started, ModuleFailure.TIMEOUT, module.revision, phase, candidateCount))
                         if (!stillCurrent(registry, module)) return@withTimeoutOrNull null
                         if (candidate != null) {
-                            cache[key] = Entry(module.revision, target, candidate, candidate.stream.expiresAtMs - 60_000)
-                            diagnostics.record(module.id, ModuleDiagnostic(ModuleCheckStatus.RESOLVED, System.currentTimeMillis(), System.currentTimeMillis() - started))
+                            cache[key] = Entry(module.id, module.revision, target, candidate, candidate.stream.expiresAtMs - 60_000)
+                            diagnostics.record(module.id, ModuleDiagnostic(ModuleCheckStatus.RESOLVED, System.currentTimeMillis(),
+                                System.currentTimeMillis() - started, revision = module.revision, phase = phase, candidateCount = candidateCount,
+                                upstream = candidate.stream.upstreamProvider, variant = candidate.stream.variant))
                             return@withTimeoutOrNull candidate
                         }
-                        if (completed) cache[key] = Entry(module.revision, target, null, System.currentTimeMillis() + 30_000)
+                        if (completed) cache[key] = Entry(module.id, module.revision, target, null, System.currentTimeMillis() + 30_000)
                     } catch (error: CancellationException) { throw error }
                     catch (error: Exception) {
                         val failure = (error as? ModuleException)?.failure ?: ModuleFailure.EXECUTION
@@ -146,8 +180,10 @@ class ResolveModuleAudioUseCase @Inject constructor(
                             ModuleFailure.TIMEOUT -> ModuleCheckStatus.TIMEOUT
                             else -> ModuleCheckStatus.FAILED
                         },
-                            System.currentTimeMillis(), System.currentTimeMillis() - started, failure))
-                        cache[key] = Entry(module.revision, target, null, System.currentTimeMillis() + 10_000)
+                            System.currentTimeMillis(), System.currentTimeMillis() - started, failure, module.revision, phase, candidateCount,
+                            code = listOfNotNull((error as? ModuleException)?.stage?.name, error.javaClass.simpleName,
+                                error.cause?.javaClass?.simpleName).joinToString("/")))
+                        cache[key] = Entry(module.id, module.revision, target, null, System.currentTimeMillis() + 10_000)
                     }
                 }
                     null
@@ -160,7 +196,7 @@ class ResolveModuleAudioUseCase @Inject constructor(
 
     suspend fun refresh(selection: ModuleAudioSelection): ModuleAudioSelection {
         if (selection.stream.expiresAtMs > System.currentTimeMillis() + 60_000) return selection
-        val refreshed = this.selection(selection.originalId, selection.module, selection.trackId)
+        val refreshed = this.selection(selection.originalId, selection.module, selection.trackId, selection.metadata)
         if (refreshed.cacheKey != selection.cacheKey ||
             (selection.stream.contentLength > 0 && refreshed.stream.contentLength > 0 && selection.stream.contentLength != refreshed.stream.contentLength)) {
             throw ModuleException(ModuleFailure.EXECUTION)
@@ -168,33 +204,16 @@ class ResolveModuleAudioUseCase @Inject constructor(
         return refreshed
     }
 
-    private suspend fun selection(id: String, module: InstalledModule, trackId: String): ModuleAudioSelection {
-        val stream = repository.runtime.stream(engineId(module), module.source, module.origin, trackId, module.configuration)
-        val identity = listOf(id, module.id, module.revision, trackId, stream.variant, stream.mimeType, stream.codecs,
+    private suspend fun selection(id: String, module: InstalledModule, trackId: String, metadata: ModuleTrack?): ModuleAudioSelection {
+        val stream = repository.runtime.stream(engineId(module), module.source, module.origin, trackId, module.configuration, metadata)
+        val identity = listOf(id, module.id, module.revision, trackId, stream.upstreamProvider, stream.upstreamId, stream.variant, stream.mimeType, stream.codecs,
             stream.bitrate.toString(), stream.sampleRate?.toString().orEmpty()).joinToString("") { "${it.length}:$it" }
         val digest = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
-        return ModuleAudioSelection(id, module, trackId, stream, "module:$digest")
+        return ModuleAudioSelection(id, module, trackId, stream, "module:$digest", metadata)
     }
 
-    private fun score(target: ModuleMatchMetadata, track: ModuleTrack): Double? {
-        if (track.title.isBlank() || track.artists.isEmpty()) return null
-        if (track.explicit != null && target.explicit != track.explicit) return null
-        val targetTitle = FuzzyMatcher.normalize(target.title)
-        val candidateTitle = FuzzyMatcher.normalize(track.title)
-        val markers = listOf("live", "remix", "cover", "karaoke", "instrumental", "acoustic", "sped up", "slowed", "remaster", "remastered", "radio edit", "extended", "demo", "clean", "mono", "stereo")
-        if (markers.any { marker -> Regex("(?:^| )${Regex.escape(marker)}(?: |$)").containsMatchIn(targetTitle) !=
-                Regex("(?:^| )${Regex.escape(marker)}(?: |$)").containsMatchIn(candidateTitle) }) return null
-        val titleScore = FuzzyMatcher.jaroWinkler(targetTitle, candidateTitle)
-        if (titleScore != 1.0 && markers.any { Regex("(?:^| )${Regex.escape(it)}(?: |$)").containsMatchIn(targetTitle) }) return null
-        val artistScore = target.artists.maxOf { artist -> track.artists.maxOf { FuzzyMatcher.jaroWinkler(artist, it) } }
-        if (titleScore < 0.9 || artistScore < 0.9) return null
-        val candidateDuration = track.durationSeconds
-        if (target.duration > 0 && candidateDuration != null) {
-            if (kotlin.math.abs(target.duration - candidateDuration) > maxOf(5.0, target.duration * 0.05)) return null
-        } else if (titleScore != 1.0 || artistScore != 1.0) return null
-        val candidateAlbum = track.album
-        val albumScore = if (!target.album.isNullOrBlank() && !candidateAlbum.isNullOrBlank()) FuzzyMatcher.jaroWinkler(target.album, candidateAlbum) else 0.0
-        return titleScore * 0.6 + artistScore * 0.35 + albumScore * 0.05
+    fun invalidateFailures(moduleId: String) {
+        cache.entries.removeIf { it.value.selection == null && it.value.moduleId == moduleId }
     }
 
     private fun engineId(module: InstalledModule) = "${module.id}:${module.revision}"

@@ -78,8 +78,8 @@
     <string name="modules_diagnostics_copy">Copy diagnostics</string>
     <string name="modules_not_checked">Not checked</string>
     <string name="modules_checking">Checking…</string>
-    <string name="modules_ready">Ready</string>
-    <string name="modules_ready_description">The provider initialized successfully. Stream availability is checked during playback.</string>
+    <string name="modules_ready">Initialized</string>
+    <string name="modules_ready_description">Provider code and configuration loaded successfully. This check does not verify track availability or audio quality.</string>
     <string name="modules_needs_configuration">Configuration required</string>
     <string name="modules_unavailable">Unavailable</string>
     <string name="modules_failed">Provider failed</string>
@@ -108,4 +108,20 @@
     <string name="modules_updates_file">This module was imported from a file. Import a replacement file to update it.</string>
     <string name="modules_youtube_quality">YouTube audio quality</string>
     <string name="modules_youtube_quality_description">Applies to YouTube playback and downloads only. Module quality is configured separately in Modules.</string>
+    <string name="modules_playback_status">Playback: %1$s</string>
+    <string name="modules_initialization">Initialization check</string>
+    <string name="modules_last_playback">Last playback attempt</string>
+    <string name="modules_phase_search">Stage: provider search</string>
+    <string name="modules_phase_match">Stage: recording match</string>
+    <string name="modules_phase_stream">Stage: stream resolution</string>
+    <string name="modules_candidates_checked">%1$d candidates checked</string>
+    <string name="modules_match_empty">The provider returned no tracks for this search.</string>
+    <string name="modules_match_metadata">The closest result lacks enough matching metadata.</string>
+    <string name="modules_match_title">The closest result has a different title.</string>
+    <string name="modules_match_artist">The closest result has a different primary artist.</string>
+    <string name="modules_match_recording">The closest result is a different recording or version.</string>
+    <string name="modules_match_duration">The closest result has a different duration.</string>
+    <string name="modules_match_explicit">The closest result has conflicting explicit-content metadata.</string>
+    <string name="modules_upstream">Upstream: %1$s</string>
+    <string name="modules_variant">Selected quality: %1$s</string>
 </resources>

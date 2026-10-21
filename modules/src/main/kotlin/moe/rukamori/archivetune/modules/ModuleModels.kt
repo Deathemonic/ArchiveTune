@@ -111,6 +111,8 @@ data class ModuleStream(
     val contentLength: Long,
     val expiresAtMs: Long,
     val variant: String,
+    val upstreamProvider: String = "",
+    val upstreamId: String = "",
 )
 
 data class ModuleDocument(val source: String, val origin: String, val manifest: ModuleManifest, val updateUrl: String = origin)

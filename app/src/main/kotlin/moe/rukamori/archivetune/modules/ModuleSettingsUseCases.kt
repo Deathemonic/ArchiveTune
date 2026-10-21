@@ -9,6 +9,7 @@ package moe.rukamori.archivetune.modules
 
 import android.net.Uri
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flow
@@ -18,9 +19,12 @@ import javax.inject.Inject
 class ModuleSettingsUseCases @Inject constructor(
     private val repository: ModuleRepository,
     private val diagnostics: ModuleDiagnostics,
+    private val resolver: ResolveModuleAudioUseCase,
 ) {
     val state = flow { repository.snapshot(); emitAll(repository.state.filterNotNull()) }
-    val health = diagnostics.state
+    val health = combine(diagnostics.checks, diagnostics.state) { checks, playback ->
+        (checks.keys + playback.keys).associateWith { ModuleHealth(checks[it], playback[it]) }
+    }
     suspend fun snapshot() = repository.snapshot()
     suspend fun setEnabled(value: Boolean) = repository.setEnabled(value)
     suspend fun enable(id: String, value: Boolean) = repository.setModuleEnabled(id, value)
@@ -46,18 +50,22 @@ class ModuleSettingsUseCases @Inject constructor(
         val started = System.currentTimeMillis()
         try {
             val checked = withTimeoutOrNull(15_000) { repository.check(module); true } == true
-            diagnostics.record(id, ModuleDiagnostic(if (checked) ModuleCheckStatus.READY else ModuleCheckStatus.TIMEOUT,
-                System.currentTimeMillis(), System.currentTimeMillis() - started))
+            if (checked) resolver.invalidateFailures(id)
+            diagnostics.recordCheck(id, ModuleDiagnostic(if (checked) ModuleCheckStatus.READY else ModuleCheckStatus.TIMEOUT,
+                System.currentTimeMillis(), System.currentTimeMillis() - started,
+                if (checked) null else ModuleFailure.TIMEOUT, module.revision))
         } catch (error: CancellationException) { throw error }
         catch (error: Exception) {
             val failure = (error as? ModuleException)?.failure ?: ModuleFailure.EXECUTION
-            diagnostics.record(id, ModuleDiagnostic(when (failure) {
+            diagnostics.recordCheck(id, ModuleDiagnostic(when (failure) {
                 ModuleFailure.INVALID_CONFIGURATION -> ModuleCheckStatus.CONFIGURATION
                 ModuleFailure.NETWORK -> ModuleCheckStatus.UNAVAILABLE
                 ModuleFailure.TIMEOUT -> ModuleCheckStatus.TIMEOUT
                 else -> ModuleCheckStatus.FAILED
             },
-                System.currentTimeMillis(), System.currentTimeMillis() - started, failure))
+                System.currentTimeMillis(), System.currentTimeMillis() - started, failure, module.revision,
+                code = listOfNotNull((error as? ModuleException)?.stage?.name, error.javaClass.simpleName,
+                    error.cause?.javaClass?.simpleName).joinToString("/")))
         }
     }
 }

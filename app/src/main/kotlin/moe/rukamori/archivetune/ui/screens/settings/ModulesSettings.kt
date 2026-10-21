@@ -246,7 +246,7 @@ private fun ModuleRow(
                 if (row.subtitle.isNotBlank()) Text(row.subtitle, style = MaterialTheme.typography.bodyMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     ModuleBadge(stringResource(R.string.modules_position, row.position, model.rows.size), accent = true)
-                    ModuleBadge(stringResource(row.status))
+                    ModuleBadge(if (row.playbackStatus) stringResource(R.string.modules_playback_status, stringResource(row.status)) else stringResource(row.status))
                 }
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
@@ -368,10 +368,13 @@ private fun ModuleDetails(detail: ModuleDetailUi, model: ModuleSettingsUiModel, 
         }
         item(key = "diagnostics", contentType = "section") {
             ModuleSection(R.string.modules_diagnostics) {
-                Text(stringResource(detail.row.status), style = MaterialTheme.typography.titleSmall)
-                if (detail.row.status == R.string.modules_ready) Text(stringResource(R.string.modules_ready_description), style = MaterialTheme.typography.bodySmall)
-                detail.diagnosticTime?.let { Text(stringResource(R.string.modules_diagnostic_time, it, detail.elapsedMs), style = MaterialTheme.typography.bodySmall) }
-                detail.failure?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
+                Text(stringResource(R.string.modules_initialization), style = MaterialTheme.typography.titleSmall)
+                ModuleDiagnosticDetails(detail.initialization)
+                if (detail.initialization?.status == R.string.modules_ready) {
+                    Text(stringResource(R.string.modules_ready_description), style = MaterialTheme.typography.bodySmall)
+                }
+                Text(stringResource(R.string.modules_last_playback), style = MaterialTheme.typography.titleSmall)
+                ModuleDiagnosticDetails(detail.playback)
                 TextButton(onClick = remember(detail.row.id, onAction) { { onAction(ModuleSettingsAction.Check(detail.row.id)) } }, enabled = model.busy == null) { Text(stringResource(R.string.modules_check)) }
                 TextButton(onClick = remember(onAction) { { onAction(ModuleSettingsAction.CopyDiagnostics) } }) { Text(stringResource(R.string.modules_diagnostics_copy)) }
             }
@@ -384,6 +387,23 @@ private fun ModuleDetails(detail: ModuleDetailUi, model: ModuleSettingsUiModel, 
             }
         }
     }
+}
+
+@Composable
+private fun ModuleDiagnosticDetails(diagnostic: ModuleDiagnosticUi?) {
+    if (diagnostic == null) {
+        Text(stringResource(R.string.modules_not_checked), style = MaterialTheme.typography.bodyMedium)
+        return
+    }
+    Text(stringResource(diagnostic.status), style = MaterialTheme.typography.bodyMedium)
+    Text(stringResource(R.string.modules_diagnostic_time, diagnostic.time, diagnostic.elapsedMs), style = MaterialTheme.typography.bodySmall)
+    diagnostic.phase?.let { Text(stringResource(it), style = MaterialTheme.typography.bodySmall) }
+    diagnostic.candidateCount?.let { Text(stringResource(R.string.modules_candidates_checked, it), style = MaterialTheme.typography.bodySmall) }
+    diagnostic.rejection?.let { Text(stringResource(it), style = MaterialTheme.typography.bodySmall) }
+    diagnostic.failure?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+    if (diagnostic.upstream.isNotBlank()) Text(stringResource(R.string.modules_upstream, diagnostic.upstream), style = MaterialTheme.typography.bodySmall)
+    if (diagnostic.variant.isNotBlank()) Text(stringResource(R.string.modules_variant, diagnostic.variant), style = MaterialTheme.typography.bodySmall)
+    if (diagnostic.code.isNotBlank()) Text(diagnostic.code, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
 }
 
 @Composable

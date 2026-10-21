@@ -45,7 +45,12 @@ class ModuleDownloadRepository @Inject constructor(
                     put(JSONObject().put("id", binding.originalId).put("revision", binding.module.revision).put("track", binding.trackId)
                         .put("cacheKey", binding.cacheKey).put("url", stream.url).put("headers", JSONObject(stream.headers))
                         .put("mime", stream.mimeType).put("codecs", stream.codecs).put("bitrate", stream.bitrate)
-                        .put("sampleRate", stream.sampleRate).put("length", stream.contentLength).put("expires", stream.expiresAtMs).put("variant", stream.variant))
+                        .put("sampleRate", stream.sampleRate).put("length", stream.contentLength).put("expires", stream.expiresAtMs).put("variant", stream.variant)
+                        .put("upstreamProvider", stream.upstreamProvider).put("upstreamId", stream.upstreamId)
+                        .put("metadata", binding.metadata?.let { track ->
+                            JSONObject().put("id", track.id).put("title", track.title).put("artists", JSONArray(track.artists))
+                                .put("album", track.album).put("duration", track.durationSeconds).put("explicit", track.explicit).put("isrc", track.identifier)
+                        }))
                 } })
             val bytes = modules.encrypt(root.toString(), "downloads").toByteArray()
             if (bytes.size > ModuleRepository.MAX_REGISTRY_BYTES * 2) throw ModuleException(ModuleFailure.INVALID_DOCUMENT)
@@ -72,7 +77,14 @@ class ModuleDownloadRepository @Inject constructor(
             id to ModuleAudioSelection(id, definitions.getValue(value.getString("revision")), value.getString("track"),
                 ModuleStream(value.getString("url"), headers.keys().asSequence().associateWith(headers::getString), value.getString("mime"),
                     value.getString("codecs"), value.optInt("bitrate"), value.optInt("sampleRate").takeIf { it > 0 }, value.optLong("length"),
-                    value.getLong("expires"), value.getString("variant")), value.getString("cacheKey"))
+                    value.getLong("expires"), value.getString("variant"), value.optString("upstreamProvider"), value.optString("upstreamId")),
+                value.getString("cacheKey"), value.optJSONObject("metadata")?.let { track ->
+                    val artists = track.getJSONArray("artists")
+                    ModuleTrack(track.getString("id"), track.getString("title"), (0 until artists.length()).map(artists::getString),
+                        track.optString("album").takeIf(String::isNotBlank), track.optInt("duration").takeIf { it > 0 },
+                        if (track.has("explicit") && !track.isNull("explicit")) track.getBoolean("explicit") else null,
+                        track.optString("isrc").takeIf(String::isNotBlank))
+                })
         }.also { loaded = it }
     }
 }

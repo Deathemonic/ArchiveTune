@@ -9,6 +9,8 @@ package moe.rukamori.archivetune.modules
 
 import android.util.Base64
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -28,6 +30,8 @@ class ModuleHttpClient(configuredClient: OkHttpClient? = null) {
     private val calls = ConcurrentHashMap<String, Call>()
     private val callLock = Any()
     private val abortedCalls = LinkedHashSet<String>()
+    private val requestSlots = Semaphore(64)
+    private val activeRequests = Semaphore(8)
     private val client = (configuredClient ?: OkHttpClient()).newBuilder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
@@ -78,11 +82,18 @@ class ModuleHttpClient(configuredClient: OkHttpClient? = null) {
         }
     }
 
-    private suspend fun execute(request: Request, id: String, maximumBytes: Int): JSONObject =
+    private suspend fun execute(request: Request, id: String, maximumBytes: Int): JSONObject {
+        if (!requestSlots.tryAcquire()) throw ModuleException(ModuleFailure.EXECUTION)
+        try {
+            return activeRequests.withPermit { executeActive(request, id, maximumBytes) }
+        } finally { requestSlots.release() }
+    }
+
+    private suspend fun executeActive(request: Request, id: String, maximumBytes: Int): JSONObject =
         suspendCancellableCoroutine { continuation ->
             val call = client.newCall(request)
             val accepted = synchronized(callLock) {
-                if (abortedCalls.remove(id) || calls.size >= 8 || calls.containsKey(id)) false else { calls[id] = call; true }
+                if (abortedCalls.remove(id) || calls.containsKey(id)) false else { calls[id] = call; true }
             }
             if (!accepted) {
                 continuation.resumeWithException(ModuleException(ModuleFailure.EXECUTION))

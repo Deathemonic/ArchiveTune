@@ -43,6 +43,7 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedListItem
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -65,6 +66,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -72,6 +74,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.utils.joinByBullet
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -140,8 +143,8 @@ fun QueueScreen(
             },
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(padding)) {
+                QueueHeader(model, onAction, headerModifier, showPlaybackControls = !scrollingHeader)
                 if (!scrollingHeader) {
-                    QueueHeader(model, onAction, headerModifier)
                     QueueRecommendationChips(model, onAction)
                     if (screenState is QueueScreenState.Error) QueueError(screenState.message, onAction)
                 }
@@ -154,7 +157,7 @@ fun QueueScreen(
                     if (scrollingHeader) {
                         item(key = "queue_header", contentType = "queue_header") {
                             Column {
-                                QueueHeader(model, onAction, headerModifier)
+                                QueuePlaybackControls(model, onAction)
                                 QueueRecommendationChips(model, onAction)
                                 if (screenState is QueueScreenState.Error) QueueError(screenState.message, onAction)
                             }
@@ -243,6 +246,7 @@ private fun QueueSongRow(
     val menu = remember(entry.id, onAction) { { onAction(QueueAction.Menu(entry.id)) } }
     val moveUp = stringResource(R.string.queue_move_up)
     val moveDown = stringResource(R.string.queue_move_down)
+    val reorderDescription = stringResource(R.string.queue_reorder)
     val accessibility = remember(controls.locked, controls.previousId, controls.nextId, entry.id, onAction, moveUp, moveDown) {
         buildList {
             if (!controls.locked) {
@@ -270,11 +274,25 @@ private fun QueueSongRow(
         onLongClick = select,
         onLongClickLabel = stringResource(R.string.queue_select_song),
         shapes = shapes,
-        modifier = Modifier.fillMaxWidth().padding(vertical = if (entry.current) 8.dp else 0.dp)
+        modifier = Modifier.fillMaxWidth().padding(vertical = if (entry.current) 4.dp else 0.dp)
             .semantics { customActions = accessibility },
         colors = ListItemDefaults.segmentedColors(containerColor = container),
         leadingContent = {
-            QueueArtwork(entry.artworkUrl, entry.current, loadArtwork)
+            Box(
+                modifier = if (controls.locked) Modifier else handle.semantics { contentDescription = reorderDescription },
+            ) {
+                QueueArtwork(entry.artworkUrl, entry.current, loadArtwork)
+                if (!controls.locked) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = colors.surfaceContainerHighest,
+                        contentColor = colors.onSurfaceVariant,
+                    ) {
+                        Icon(painterResource(R.drawable.drag_handle), null, Modifier.size(24.dp))
+                    }
+                }
+            }
         },
         overlineContent = if (entry.current) {
             {
@@ -287,29 +305,23 @@ private fun QueueSongRow(
             }
         } else null,
         supportingContent = {
-            Column {
-                Text(entry.artists, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (entry.current) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(entry.duration, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { onAction(QueueAction.ToggleLike) }) {
-                            Icon(painterResource(if (controls.liked) R.drawable.favorite else R.drawable.favorite_border),
-                                stringResource(if (controls.liked) R.string.action_remove_like else R.string.action_like))
-                        }
-                    }
-                } else Text(entry.duration, style = MaterialTheme.typography.labelSmall)
-            }
+            val metadata = remember(entry.artists, entry.duration) { joinByBullet(entry.artists, entry.duration) }
+            Text(metadata, maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         trailingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (controls.selecting) {
                     Checkbox(checked = entry.selected, onCheckedChange = { select() })
                 } else {
+                    if (entry.current) {
+                        IconButton(onClick = { onAction(QueueAction.ToggleLike) }) {
+                            Icon(
+                                painterResource(if (controls.liked) R.drawable.favorite else R.drawable.favorite_border),
+                                stringResource(if (controls.liked) R.string.action_remove_like else R.string.action_like),
+                            )
+                        }
+                    }
                     IconButton(onClick = menu) { Icon(painterResource(R.drawable.more_vert), stringResource(R.string.more_label)) }
-                }
-                if (!controls.locked) {
-                    Icon(painterResource(R.drawable.drag_handle), stringResource(R.string.queue_reorder),
-                        modifier = handle.size(48.dp).padding(12.dp))
                 }
             }
         },
@@ -322,7 +334,7 @@ private fun QueueSongRow(
 @Composable
 private fun QueueArtwork(url: String?, current: Boolean, load: Boolean) {
     val context = LocalContext.current
-    val size = if (current) 72.dp else 52.dp
+    val size = if (current) 64.dp else 52.dp
     val pixels = with(LocalDensity.current) { size.roundToPx() }
     val request = remember(context, url, pixels, load) { ImageRequest.Builder(context).data(url.takeIf { load }).size(pixels).build() }
     AsyncImage(request, contentDescription = null, contentScale = ContentScale.Crop,

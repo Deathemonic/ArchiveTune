@@ -4281,10 +4281,12 @@ class MusicService :
                 if (generation != recommendationGeneration || player.currentMediaItem?.queueEntryId != seedEntry ||
                     player.currentMetadata?.id != metadata.id || isTogetherGuestSession()
                 ) return@launch
-                val windows = player.getQueueWindows()
-                val current = windows.indexOfFirst { it.firstPeriodIndex == player.currentMediaItemIndex }
+                val queuePlayer = queueEditPlayer()
+                val windows = queuePlayer.getQueueWindows()
+                val currentUid = queuePlayer.currentTimeline.getWindow(queuePlayer.currentMediaItemIndex, Timeline.Window()).uid
+                val current = windows.indexOfFirst { it.uid == currentUid }
                 val future = windows.drop(current + 1)
-                future.map { it.firstPeriodIndex }.sortedDescending().forEach(player::removeMediaItem)
+                removeQueueWindows(queuePlayer, future)
                 val items = status.items.filterNot { it.mediaId == metadata.id }
                 appendRecommendations(items)
                 recommendationQueue = queue
@@ -4337,7 +4339,9 @@ class MusicService :
             isCurrentPlaybackItemLocal(metadata) || isTogetherGuestSession()
         ) return
         val active = recommendationQueue ?: (currentQueue as? YouTubeQueue)?.takeIf { it.isRadio }
-        val chips = currentQueue.queueChips.ifEmpty { active?.chips.orEmpty() }
+        val chips = queueRecommendations.value.chips.ifEmpty {
+            active?.chips.orEmpty().ifEmpty { currentQueue.queueChips }
+        }
         if (recommendationRequest?.isActive == true || infiniteQueueJob?.isActive == true) return
         if (force) {
             failedRecommendation?.let { (endpoint, replace, id) ->
@@ -4360,6 +4364,7 @@ class MusicService :
 
     fun selectQueueChip(id: String) {
         if (isTogetherGuestSession() || !dataStore.get(AutoLoadMoreKey, true)) return
+        if (queueRecommendations.value.pendingChipId == id) return
         val chip = queueRecommendations.value.chips.firstOrNull { it.id == id } ?: return
         val endpoint = if (chip.selected) chip.deselectEndpoint ?: return else chip.endpoint
         requestRecommendations(endpoint, replace = true, chipId = id)
@@ -4368,30 +4373,33 @@ class MusicService :
     private fun requestRecommendations(endpoint: WatchEndpoint, replace: Boolean, chipId: String? = null) {
         val seed = player.currentMetadata ?: return
         if (seed.isPodcast || isCurrentPlaybackItemLocal(seed)) return
+        val queuePlayer = queueEditPlayer()
         recommendationRequest?.cancel()
         if (replace) {
             cancelInfiniteQueueBootstrap()
         }
         val generation = ++recommendationGeneration
         val source = currentQueue
-        val seedEntry = player.currentMediaItem?.queueEntryId
+        val seedEntry = queuePlayer.currentMediaItem?.queueEntryId
         recommendationSeed = seed.id
         val previous = queueRecommendations.value
         failedRecommendation = null
         queueRecommendations.value = previous.copy(loading = true, pendingChipId = chipId, failed = false)
         recommendationRequest = scope.launch {
             try {
-                val queue = YouTubeQueue(endpoint, followAutomixPreview = true)
+                val queue = YouTubeQueue(endpoint, followAutomixPreview = chipId == null)
                 val status = withContext(Dispatchers.IO) {
                     queue.getInitialStatus().filterPlaybackContent(
                         dataStore.get(HideExplicitKey, false), dataStore.get(HideVideoKey, false),
                     )
                 }
                 if (generation != recommendationGeneration || currentQueue !== source ||
-                    player.currentMediaItem?.queueEntryId != seedEntry ||
-                    player.currentMetadata?.id != seed.id || !dataStore.get(AutoLoadMoreKey, true) ||
+                    queueEditPlayer() !== queuePlayer || queuePlayer.currentMediaItem?.queueEntryId != seedEntry ||
+                    queuePlayer.currentMetadata?.id != seed.id || !dataStore.get(AutoLoadMoreKey, true) ||
                     isTogetherGuestSession()
                 ) return@launch
+                val updated = previous.acceptResponse(queue.chips, chipId)
+                queue.updateChips(updated.chips)
                 if (replace) {
                     val incoming = recommendationItems(status.items)
                     replaceUpcomingRecommendations(incoming)
@@ -4407,9 +4415,9 @@ class MusicService :
                     if (active == null) {
                         recommendationQueue = queue
                         recommendationBuffer = status.items
-                    } else active.updateChips(queue.chips)
+                    } else active.updateChips(updated.chips)
                 }
-                queueRecommendations.value = QueueRecommendations(chips = queue.chips)
+                queueRecommendations.value = updated
                 if (replace) saveQueueToDisk()
             } catch (error: CancellationException) {
                 throw error
@@ -4432,53 +4440,71 @@ class MusicService :
     }
 
     private fun recommendationItems(items: List<MediaItem>): List<MediaItem> {
-        val known = player.getQueueWindows()
-            .filter { !it.mediaItem.isQueueRecommendation || it.firstPeriodIndex == player.currentMediaItemIndex }
+        val queuePlayer = queueEditPlayer()
+        val replaced = upcomingRecommendationWindows(queuePlayer).mapTo(mutableSetOf()) { it.uid }
+        val known = queuePlayer.getQueueWindows()
+            .filterNot { it.uid in replaced }
             .mapTo(mutableSetOf()) { it.mediaItem.mediaId }
         return items.filter { known.add(it.mediaId) }.map { it.withQueueEntry(recommended = true) }
     }
 
-    private fun upcomingRecommendationWindows(): List<Timeline.Window> {
-        val windows = player.getQueueWindows()
-        val current = windows.indexOfFirst { it.firstPeriodIndex == player.currentMediaItemIndex }
+    private fun upcomingRecommendationWindows(queuePlayer: Player = queueEditPlayer()): List<Timeline.Window> {
+        val timeline = queuePlayer.currentTimeline
+        if (timeline.isEmpty) return emptyList()
+        val windows = queuePlayer.getQueueWindows()
+        val currentUid = timeline.getWindow(queuePlayer.currentMediaItemIndex, Timeline.Window()).uid
+        val current = windows.indexOfFirst { it.uid == currentUid }
         return if (current < 0) emptyList() else windows.drop(current + 1).filter { it.mediaItem.isQueueRecommendation }
     }
 
-    private fun applyQueueTraversal(order: List<Any>) {
-        if (!player.shuffleModeEnabled) return
-        val windows = player.getQueueWindows()
-        val indices = windows.associate { it.uid to it.firstPeriodIndex }
+    private fun applyQueueTraversal(queuePlayer: Player, order: List<Any>) {
+        if (queuePlayer !is ExoPlayer || !queuePlayer.shuffleModeEnabled) return
+        val timeline = queuePlayer.currentTimeline
+        val indices = (0 until timeline.windowCount).associate { index ->
+            timeline.getWindow(index, Timeline.Window()).uid to index
+        }
         val retained = order.mapNotNull(indices::get).distinct()
         val seen = retained.toHashSet()
-        val remaining = windows.map { it.firstPeriodIndex }.filterNot { it in seen }
-        localPlayer.setShuffleOrder(DefaultShuffleOrder((retained + remaining).toIntArray(), System.currentTimeMillis()))
+        val remaining = (0 until timeline.windowCount).filterNot { it in seen }
+        queuePlayer.setShuffleOrder(DefaultShuffleOrder((retained + remaining).toIntArray(), System.currentTimeMillis()))
     }
 
-    private fun insertedQueueUids(items: List<MediaItem>): List<Any> {
-        val windows = player.getQueueWindows().associateBy { it.mediaItem.queueEntryId }
+    private fun insertedQueueUids(queuePlayer: Player, items: List<MediaItem>): List<Any> {
+        val windows = queuePlayer.getQueueWindows().associateBy { it.mediaItem.queueEntryId }
         return items.mapNotNull { windows[it.queueEntryId]?.uid }
     }
 
+    private fun removeQueueWindows(queuePlayer: Player, windows: List<Timeline.Window>) {
+        val removed = windows.mapTo(mutableSetOf()) { it.uid }
+        val timeline = queuePlayer.currentTimeline
+        val indices = (0 until timeline.windowCount).filter { index ->
+            timeline.getWindow(index, Timeline.Window()).uid in removed
+        }
+        indices.asReversed().forEach(queuePlayer::removeMediaItem)
+    }
+
     private fun appendRecommendations(items: List<MediaItem>) {
-        val order = player.getQueueWindows().map { it.uid }
-        player.addMediaItems(items)
-        applyQueueTraversal(order + insertedQueueUids(items))
+        val queuePlayer = queueEditPlayer()
+        val order = queuePlayer.getQueueWindows().map { it.uid }
+        queuePlayer.addMediaItems(items)
+        applyQueueTraversal(queuePlayer, order + insertedQueueUids(queuePlayer, items))
     }
 
     private fun replaceUpcomingRecommendations(items: List<MediaItem>) {
-        val upcoming = upcomingRecommendationWindows()
+        val queuePlayer = queueEditPlayer()
+        val upcoming = upcomingRecommendationWindows(queuePlayer)
         val removed = upcoming.mapTo(mutableSetOf()) { it.uid }
-        val traversal = player.getQueueWindows().filterNot { it.uid in removed }.map { it.uid }
-        pendingQueueRemoval = null
-        upcoming.map { it.firstPeriodIndex }.sortedDescending().forEach(player::removeMediaItem)
-        player.addMediaItems(items)
-        applyQueueTraversal(traversal + insertedQueueUids(items))
+        val traversal = queuePlayer.getQueueWindows().filterNot { it.uid in removed }.map { it.uid }
+        removeQueueWindows(queuePlayer, upcoming)
+        queuePlayer.addMediaItems(items)
+        applyQueueTraversal(queuePlayer, traversal + insertedQueueUids(queuePlayer, items))
     }
 
     fun onInfiniteQueueDisabled() {
         cancelInfiniteQueueBootstrap()
         resetQueueRecommendations()
-        upcomingRecommendationWindows().map { it.firstPeriodIndex }.sortedDescending().forEach(player::removeMediaItem)
+        val queuePlayer = queueEditPlayer()
+        removeQueueWindows(queuePlayer, upcomingRecommendationWindows(queuePlayer))
         if (currentQueue.recommendationOnlyContinuation) {
             queuePageJob?.cancel()
             queuePageJob = null
@@ -4492,6 +4518,8 @@ class MusicService :
         if (infiniteQueueJob?.isActive == true || recommendationRequest?.isActive == true ||
             queuePageJob?.isActive == true || initialQueueJob?.isActive == true || currentQueue.hasNextPage()
         ) return
+        val active = recommendationQueue
+        if (active != null && recommendationBuffer.isEmpty() && !active.hasNextPage()) return
         val generation = ++infiniteQueueGeneration
         val recommendationVersion = recommendationGeneration
         val seedId = metadata.id
@@ -4499,7 +4527,7 @@ class MusicService :
         infiniteQueueLoading.value = true
         infiniteQueueJob = scope.launch {
             try {
-                val queue = recommendationQueue?.takeIf { it.hasNextPage() || recommendationBuffer.isNotEmpty() }
+                val queue = active
                     ?: YouTubeQueue(WatchEndpoint(videoId = seedId), followAutomixPreview = true)
                 val buffered = recommendationBuffer
                 val fetchPage = recommendationQueue === queue && buffered.isEmpty() && queue.hasNextPage()
@@ -4524,7 +4552,9 @@ class MusicService :
                 recommendationBuffer = emptyList()
                 recommendationQueue = queue
                 recommendationSeed = seedId
-                queueRecommendations.value = QueueRecommendations(chips = queue.chips)
+                val updated = queueRecommendations.value.acceptResponse(queue.chips)
+                queue.updateChips(updated.chips)
+                queueRecommendations.value = updated
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -4551,22 +4581,23 @@ class MusicService :
                     )
                 }
                 if (currentQueue !== queue || player.playbackState == STATE_IDLE) return@launch
-                val knownEntries = player.getQueueWindows().mapNotNullTo(mutableSetOf()) { it.mediaItem.metadata?.setVideoId }
+                val queuePlayer = queueEditPlayer()
+                val knownEntries = queuePlayer.getQueueWindows().mapNotNullTo(mutableSetOf()) { it.mediaItem.metadata?.setVideoId }
                 val additions = items.filter { item ->
                     item.metadata?.setVideoId?.takeIf { it.isNotBlank() }?.let(knownEntries::add) ?: true
                 }.map { it.withQueueEntry() }
-                val windows = player.getQueueWindows()
-                val upcoming = upcomingRecommendationWindows().mapTo(mutableSetOf()) { it.uid }
+                val windows = queuePlayer.getQueueWindows()
+                val upcoming = upcomingRecommendationWindows(queuePlayer).mapTo(mutableSetOf()) { it.uid }
                 val position = windows.indexOfFirst { it.uid in upcoming }.takeIf { it >= 0 } ?: windows.size
-                if (player.shuffleModeEnabled) {
-                    player.addMediaItems(additions)
+                if (queuePlayer.shuffleModeEnabled) {
+                    queuePlayer.addMediaItems(additions)
                     val order = windows.map { it.uid }
-                    applyQueueTraversal(order.take(position) + insertedQueueUids(additions) + order.drop(position))
+                    applyQueueTraversal(queuePlayer, order.take(position) + insertedQueueUids(queuePlayer, additions) + order.drop(position))
                 } else {
-                    player.addMediaItems(position, additions)
+                    queuePlayer.addMediaItems(position, additions)
                 }
                 if (queue.recommendationOnlyContinuation) {
-                    queueRecommendations.value = QueueRecommendations(chips = queue.queueChips)
+                    queueRecommendations.value = queueRecommendations.value.acceptResponse(queue.queueChips)
                 }
             } catch (error: CancellationException) {
                 throw error

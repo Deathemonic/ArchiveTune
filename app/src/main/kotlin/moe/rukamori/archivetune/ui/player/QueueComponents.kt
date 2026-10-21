@@ -87,22 +87,21 @@ fun QueueHeader(
     model: QueueUiModel,
     onAction: (QueueAction) -> Unit,
     modifier: Modifier = Modifier,
+    showPlaybackControls: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
-    val shuffleDescription = stringResource(if (model.shuffle) R.string.action_shuffle_on else R.string.action_shuffle_off)
-    val repeatDescription = stringResource(when (model.repeatMode) {
-        Player.REPEAT_MODE_ONE -> R.string.repeat_mode_one
-        Player.REPEAT_MODE_ALL -> R.string.repeat_mode_all
-        else -> R.string.repeat_mode_off
-    })
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         androidx.compose.material3.BottomSheetDefaults.DragHandle(modifier = Modifier.align(Alignment.CenterHorizontally))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.queue), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    stringResource(R.string.queue),
+                    style = if (showPlaybackControls) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
                 model.title?.takeIf { it.isNotBlank() }?.let { title ->
                     Text(title, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        maxLines = if (showPlaybackControls) 2 else 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             IconButton(onClick = { onAction(QueueAction.ToggleLock) }, enabled = !model.guest) {
@@ -141,32 +140,48 @@ fun QueueHeader(
             color = colors.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
         )
-        Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
-            ToggleButton(
-                checked = model.shuffle,
-                onCheckedChange = { onAction(QueueAction.ToggleShuffle) },
-                enabled = model.canControlPlayback,
-                shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
-                modifier = Modifier.weight(1f).height(56.dp),
-            ) { Icon(painterResource(R.drawable.shuffle), shuffleDescription) }
-            ToggleButton(
-                checked = model.repeatMode != Player.REPEAT_MODE_OFF,
-                onCheckedChange = { onAction(QueueAction.ToggleRepeat) },
-                enabled = model.canControlPlayback,
-                shapes = ButtonGroupDefaults.connectedMiddleButtonShapes(),
-                modifier = Modifier.weight(1f).height(56.dp),
-            ) {
-                Icon(painterResource(if (model.repeatMode == Player.REPEAT_MODE_ONE) R.drawable.repeat_one_on else R.drawable.repeat), repeatDescription)
-            }
-            ToggleButton(
-                checked = model.autoplay && model.autoplayAvailable,
-                onCheckedChange = { onAction(QueueAction.ToggleAutoplay) },
-                enabled = model.autoplayAvailable && !model.guest,
-                shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
-                modifier = Modifier.weight(1f).height(56.dp),
-                colors = ToggleButtonDefaults.colors(checkedContainerColor = colors.primary, checkedContentColor = colors.onPrimary),
-            ) { Icon(painterResource(R.drawable.all_inclusive), stringResource(R.string.queue_continue_playing)) }
+        if (showPlaybackControls) QueuePlaybackControls(model, onAction)
+    }
+}
+
+@Composable
+fun QueuePlaybackControls(
+    model: QueueUiModel,
+    onAction: (QueueAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val shuffleDescription = stringResource(if (model.shuffle) R.string.action_shuffle_on else R.string.action_shuffle_off)
+    val repeatDescription = stringResource(when (model.repeatMode) {
+        Player.REPEAT_MODE_ONE -> R.string.repeat_mode_one
+        Player.REPEAT_MODE_ALL -> R.string.repeat_mode_all
+        else -> R.string.repeat_mode_off
+    })
+    Row(modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
+        ToggleButton(
+            checked = model.shuffle,
+            onCheckedChange = { onAction(QueueAction.ToggleShuffle) },
+            enabled = model.canControlPlayback,
+            shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
+            modifier = Modifier.weight(1f).height(56.dp),
+        ) { Icon(painterResource(R.drawable.shuffle), shuffleDescription) }
+        ToggleButton(
+            checked = model.repeatMode != Player.REPEAT_MODE_OFF,
+            onCheckedChange = { onAction(QueueAction.ToggleRepeat) },
+            enabled = model.canControlPlayback,
+            shapes = ButtonGroupDefaults.connectedMiddleButtonShapes(),
+            modifier = Modifier.weight(1f).height(56.dp),
+        ) {
+            Icon(painterResource(if (model.repeatMode == Player.REPEAT_MODE_ONE) R.drawable.repeat_one_on else R.drawable.repeat), repeatDescription)
         }
+        ToggleButton(
+            checked = model.autoplay && model.autoplayAvailable,
+            onCheckedChange = { onAction(QueueAction.ToggleAutoplay) },
+            enabled = model.autoplayAvailable && !model.guest,
+            shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
+            modifier = Modifier.weight(1f).height(56.dp),
+            colors = ToggleButtonDefaults.colors(checkedContainerColor = colors.primary, checkedContentColor = colors.onPrimary),
+        ) { Icon(painterResource(R.drawable.all_inclusive), stringResource(R.string.queue_continue_playing)) }
     }
 }
 

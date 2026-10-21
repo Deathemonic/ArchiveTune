@@ -141,6 +141,8 @@ import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.isLowRamDevice
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.viewmodels.GlassStyleConfirmationViewModel
+import moe.rukamori.archivetune.viewmodels.GlassStyleTarget
 import moe.rukamori.archivetune.viewmodels.PlaylistTagUiModel
 import moe.rukamori.archivetune.viewmodels.PlaylistTagsScreenState
 import moe.rukamori.archivetune.viewmodels.PlaylistTagsViewModel
@@ -149,6 +151,8 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppearanceSettings(navController: NavController) {
+    val glassConfirmationViewModel: GlassStyleConfirmationViewModel = hiltViewModel()
+    val pendingGlassTarget by glassConfirmationViewModel.pendingTarget.collectAsStateWithLifecycle()
     val playlistTagsViewModel: PlaylistTagsViewModel = hiltViewModel()
     val playlistTagsState by playlistTagsViewModel.screenState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -224,6 +228,38 @@ fun AppearanceSettings(navController: NavController) {
             NavigationBarModeKey,
             defaultValue = NavigationBarMode.CONNECTED,
         )
+    val onMiniPlayerBackgroundSelected = remember(glassConfirmationViewModel, onMiniPlayerBackgroundChange) {
+        { style: MiniPlayerBackgroundStyle ->
+            if (style == MiniPlayerBackgroundStyle.GLASS) {
+                glassConfirmationViewModel.requestConfirmation(GlassStyleTarget.MINI_PLAYER)
+            } else {
+                glassConfirmationViewModel.cancelConfirmation()
+                onMiniPlayerBackgroundChange(style)
+            }
+        }
+    }
+    val onNavigationBarBackgroundSelected = remember(glassConfirmationViewModel, onNavigationBarBackgroundChange) {
+        { style: NavigationBarBackgroundStyle ->
+            if (style == NavigationBarBackgroundStyle.GLASS) {
+                glassConfirmationViewModel.requestConfirmation(GlassStyleTarget.NAVIGATION_BAR)
+            } else {
+                glassConfirmationViewModel.cancelConfirmation()
+                onNavigationBarBackgroundChange(style)
+            }
+        }
+    }
+    val onCancelGlass = remember(glassConfirmationViewModel) {
+        glassConfirmationViewModel::cancelConfirmation
+    }
+    val onApplyGlass = remember(glassConfirmationViewModel, onMiniPlayerBackgroundChange, onNavigationBarBackgroundChange) {
+        {
+            when (glassConfirmationViewModel.confirmSelection()) {
+                GlassStyleTarget.MINI_PLAYER -> onMiniPlayerBackgroundChange(MiniPlayerBackgroundStyle.GLASS)
+                GlassStyleTarget.NAVIGATION_BAR -> onNavigationBarBackgroundChange(NavigationBarBackgroundStyle.GLASS)
+                null -> Unit
+            }
+        }
+    }
     val (disableBlur, onDisableBlurChange) = rememberPreference(DisableBlurKey, defaultValue = false)
     val (disableAnimations, onDisableAnimationsChange) =
         rememberPreference(
@@ -432,6 +468,13 @@ fun AppearanceSettings(navController: NavController) {
         if (!isPlayerStyleCustomizationEnabled) {
             showSliderOptionDialog = false
         }
+    }
+
+    if (pendingGlassTarget != null) {
+        GlassPerformanceWarningDialog(
+            onApply = onApplyGlass,
+            onCancel = onCancelGlass,
+        )
     }
 
     if (showSliderOptionDialog && isPlayerStyleCustomizationEnabled) {
@@ -710,37 +753,6 @@ fun AppearanceSettings(navController: NavController) {
 
                 item {
                     EnumListPreference(
-                        title = { Text(stringResource(R.string.navigation_bar_background_style)) },
-                        icon = { Icon(painterResource(R.drawable.gradient), null) },
-                        selectedValue = navigationBarBackground,
-                        onValueSelected = onNavigationBarBackgroundChange,
-                        valueText = {
-                            when (it) {
-                                NavigationBarBackgroundStyle.THEME -> stringResource(R.string.follow_theme)
-                                NavigationBarBackgroundStyle.BLUR -> stringResource(R.string.blur)
-                                NavigationBarBackgroundStyle.ACRYLIC -> stringResource(R.string.acrylic)
-                            }
-                        },
-                    )
-                }
-
-                item {
-                    EnumListPreference(
-                        title = { Text(stringResource(R.string.navigation_bar_mode)) },
-                        icon = { Icon(painterResource(R.drawable.palette), null) },
-                        selectedValue = navigationBarMode,
-                        onValueSelected = onNavigationBarModeChange,
-                        valueText = {
-                            when (it) {
-                                NavigationBarMode.CONNECTED -> stringResource(R.string.navigation_bar_mode_connected)
-                                NavigationBarMode.STANDALONE -> stringResource(R.string.navigation_bar_mode_standalone)
-                            }
-                        },
-                    )
-                }
-
-                item {
-                    EnumListPreference(
                         title = { Text(stringResource(R.string.font_preference)) },
                         description = stringResource(R.string.font_preference_desc),
                         icon = { Icon(painterResource(R.drawable.text_fields), null) },
@@ -885,7 +897,7 @@ fun AppearanceSettings(navController: NavController) {
                         title = { Text(stringResource(R.string.mini_player_background_style)) },
                         icon = { Icon(painterResource(R.drawable.gradient), null) },
                         selectedValue = miniPlayerBackground,
-                        onValueSelected = onMiniPlayerBackgroundChange,
+                        onValueSelected = onMiniPlayerBackgroundSelected,
                         valueText = {
                             when (it) {
                                 MiniPlayerBackgroundStyle.THEME -> stringResource(R.string.follow_theme)
@@ -893,6 +905,39 @@ fun AppearanceSettings(navController: NavController) {
                                 MiniPlayerBackgroundStyle.GLOW -> stringResource(R.string.glow)
                                 MiniPlayerBackgroundStyle.ACRYLIC -> stringResource(R.string.acrylic)
                                 MiniPlayerBackgroundStyle.BLUR -> stringResource(R.string.blur)
+                                MiniPlayerBackgroundStyle.GLASS -> stringResource(R.string.glass)
+                            }
+                        },
+                    )
+                }
+
+                item {
+                    EnumListPreference(
+                        title = { Text(stringResource(R.string.navigation_bar_background_style)) },
+                        icon = { Icon(painterResource(R.drawable.gradient), null) },
+                        selectedValue = navigationBarBackground,
+                        onValueSelected = onNavigationBarBackgroundSelected,
+                        valueText = {
+                            when (it) {
+                                NavigationBarBackgroundStyle.THEME -> stringResource(R.string.follow_theme)
+                                NavigationBarBackgroundStyle.BLUR -> stringResource(R.string.blur)
+                                NavigationBarBackgroundStyle.ACRYLIC -> stringResource(R.string.acrylic)
+                                NavigationBarBackgroundStyle.GLASS -> stringResource(R.string.glass)
+                            }
+                        },
+                    )
+                }
+
+                item {
+                    EnumListPreference(
+                        title = { Text(stringResource(R.string.navigation_bar_mode)) },
+                        icon = { Icon(painterResource(R.drawable.palette), null) },
+                        selectedValue = navigationBarMode,
+                        onValueSelected = onNavigationBarModeChange,
+                        valueText = {
+                            when (it) {
+                                NavigationBarMode.CONNECTED -> stringResource(R.string.navigation_bar_mode_connected)
+                                NavigationBarMode.STANDALONE -> stringResource(R.string.navigation_bar_mode_standalone)
                             }
                         },
                     )
@@ -1164,6 +1209,27 @@ fun AppearanceSettings(navController: NavController) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun GlassPerformanceWarningDialog(
+    onApply: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    DefaultDialog(
+        onDismiss = onCancel,
+        title = { Text(stringResource(R.string.glass_performance_warning_title)) },
+        buttons = {
+            TextButton(onClick = onCancel, shapes = ButtonDefaults.shapes()) {
+                Text(stringResource(R.string.cancel))
+            }
+            TextButton(onClick = onApply, shapes = ButtonDefaults.shapes()) {
+                Text(stringResource(R.string.apply))
+            }
+        },
+    ) {
+        Text(stringResource(R.string.glass_performance_warning))
     }
 }
 

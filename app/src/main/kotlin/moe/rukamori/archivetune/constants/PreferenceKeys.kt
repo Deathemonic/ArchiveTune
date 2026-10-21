@@ -704,12 +704,14 @@ enum class MiniPlayerBackgroundStyle {
     GLOW,
     ACRYLIC,
     BLUR,
+    GLASS,
 }
 
 enum class NavigationBarBackgroundStyle {
     THEME,
     BLUR,
     ACRYLIC,
+    GLASS,
 }
 
 enum class NavigationBarMode {

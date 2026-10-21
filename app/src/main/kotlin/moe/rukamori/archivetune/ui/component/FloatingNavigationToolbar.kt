@@ -118,7 +118,14 @@ fun FloatingNavigationToolbar(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (backgroundStyle != NavigationBarBackgroundStyle.THEME) {
+                    if (backgroundStyle == NavigationBarBackgroundStyle.GLASS) {
+                        FloatingBarGlassBackground(
+                            hazeState = hazeState,
+                            shape = navigationShape,
+                            pureBlack = pureBlack,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else if (backgroundStyle != NavigationBarBackgroundStyle.THEME) {
                         FloatingBarBlurBackground(
                             hazeState = hazeState,
                             isAcrylic = backgroundStyle == NavigationBarBackgroundStyle.ACRYLIC,

@@ -53,6 +53,7 @@ data class QueuePlaybackData(
 data class QueueExtraData(
     val title: String?, val liked: Boolean, val recommendations: QueueRecommendations,
     val guest: Boolean, val loading: Boolean, val canControlPlayback: Boolean,
+    val currentSongIsLocal: Boolean,
 )
 
 data class QueueSnapshot(
@@ -121,13 +122,14 @@ class QueueRepository @Inject constructor(@ApplicationContext private val contex
             ) { title, song, recommendations, together, loading ->
                 QueueExtraData(title, song?.song?.liked == true, recommendations,
                     (together as? TogetherSessionState.Joined)?.role is TogetherRole.Guest, loading,
-                    together !is TogetherSessionState.Joined || together.role !is TogetherRole.Guest || together.roomState.settings.allowGuestsToControlPlayback)
+                    together !is TogetherSessionState.Joined || together.role !is TogetherRole.Guest || together.roomState.settings.allowGuestsToControlPlayback,
+                    currentSongIsLocal = song?.song?.isLocal == true)
             }
             combine(playback, extra, context.dataStore.data) { data, details, preferences ->
                 val metadata = data.entries.firstOrNull { it.current }?.metadata
                 QueueSnapshot(data, details, preferences[QueueEditLockKey] ?: true, preferences[AutoLoadMoreKey] ?: true,
                     metadata != null && !metadata.isPodcast && !metadata.id.isLocalMediaId() &&
-                        player.service.currentSong.value?.song?.isLocal != true)
+                        !details.currentSongIsLocal)
             }
         }
     }

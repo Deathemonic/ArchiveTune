@@ -9,6 +9,7 @@ package moe.rukamori.archivetune.modules
 
 import android.content.Context
 import com.dokar.quickjs.QuickJs
+import com.dokar.quickjs.QuickJsInterruptedException
 import com.dokar.quickjs.binding.asyncFunction
 import com.dokar.quickjs.binding.function
 import com.dokar.quickjs.evaluate
@@ -109,15 +110,20 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
             val runtime = checkNotNull(engine).runtime
             try {
                 val result = runtime.evaluate<String>(
-                    "JSON.stringify(await (async()=>{const args=$args;" +
+                    "(async()=>{const args=$args;" +
                         (if (function == "getTrackStreamUrl") "if(args[1]===null)args[1]=undefined;" else "") +
-                        "return globalThis.__provider[${JSONObject.quote(function)}](...args);})());",
+                        "const result=await globalThis.__provider[${JSONObject.quote(function)}](...args);" +
+                        "return JSON.stringify(result===undefined?null:result);})();",
+                    filename = "module-call.js",
                 )
                 if (result.length > ModuleHttpClient.MAX_BODY_BYTES) throw ModuleException(ModuleFailure.EXECUTION)
                 org.json.JSONTokener(result).nextValue()
             } catch (error: CancellationException) {
                 engines.remove(id)?.runtime?.close()
                 throw error
+            } catch (error: QuickJsInterruptedException) {
+                engines.remove(id)?.runtime?.close()
+                throw ModuleException(ModuleFailure.TIMEOUT, error)
             } catch (error: Exception) {
                 engines.remove(id)?.runtime?.close()
                 throw ModuleException(ModuleFailure.EXECUTION, error)
@@ -125,7 +131,9 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
         }
 
     private suspend fun create(source: String, origin: String): QuickJs = withContext(Dispatchers.Default) {
+        val code = ModuleSourceDecoder.decode(source).replaceFirst(Regex("^export\\s+default\\s+"), "return ")
         val runtime = QuickJs.create(Dispatchers.Default)
+        var initialized = false
         try {
             runtime.memoryLimit = 32L * 1024 * 1024
             runtime.maxStackSize = 1024L * 1024
@@ -152,15 +160,23 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
                     .put("pathname", uri.rawPath.orEmpty().ifBlank { "/" }).put("search", uri.rawQuery?.let { "?$it" }.orEmpty())
                     .put("hash", uri.rawFragment?.let { "#$it" }.orEmpty()).put("origin", "${uri.scheme}://${uri.rawAuthority}").toString()
             }
-            runtime.evaluate<Unit>(applicationContext.assets.open("module-host.js").bufferedReader().use { it.readText() })
-            val code = ModuleSourceDecoder.decode(source).replaceFirst(Regex("^export\\s+default\\s+"), "return ")
+            val host = withContext(Dispatchers.IO) {
+                applicationContext.assets.open("module-host.js").bufferedReader().use { it.readText() }
+            }
+            runtime.evaluate<Unit>(host + "\nvoid 0;", filename = "module-host.js")
             runtime.evaluate<Unit>(
                 "globalThis.__provider=(function(){const module={exports:{}};const exports=module.exports;" +
-                    code + "\n;return module.exports;})();",
+                    code + "\n;return module.exports;})();\nvoid 0;",
+                filename = "module-provider.js",
             )
             manifest(runtime)
+            initialized = true
             runtime
-        } catch (error: Throwable) { runtime.close(); throw error }
+        } catch (error: CancellationException) { throw error }
+        catch (error: ModuleException) { throw error }
+        catch (error: QuickJsInterruptedException) { throw ModuleException(ModuleFailure.TIMEOUT, error) }
+        catch (error: Exception) { throw ModuleException(ModuleFailure.EXECUTION, error) }
+        finally { if (!initialized) runtime.close() }
     }
 
     private suspend fun manifest(runtime: QuickJs): ModuleManifest {

@@ -22,6 +22,17 @@
     <string name="modules_url_hint">A direct module, descriptor, or catalog URL</string>
     <string name="modules_continue">Continue</string>
     <string name="modules_install">Install</string>
+    <string name="modules_loading">Loading module…</string>
+    <string name="modules_show_details">Show details</string>
+    <string name="modules_hide_details">Hide details</string>
+    <string name="modules_catalog_entries_empty">This catalog has no modules available.</string>
+    <string name="modules_stage_download">Downloading module</string>
+    <string name="modules_stage_decode">Reading module format</string>
+    <string name="modules_stage_engine">Starting module engine</string>
+    <string name="modules_stage_host">Preparing module environment</string>
+    <string name="modules_stage_provider">Loading provider code</string>
+    <string name="modules_stage_manifest">Reading provider configuration</string>
+    <string name="modules_stage_storage">Saving module configuration</string>
     <string name="modules_replace">Replace installed version</string>
     <string name="modules_install_review">Review installation</string>
     <string name="modules_catalog_review">Review catalog</string>

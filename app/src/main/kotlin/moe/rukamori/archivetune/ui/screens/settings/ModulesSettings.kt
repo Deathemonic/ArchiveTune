@@ -13,10 +13,11 @@ import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -29,7 +30,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -41,6 +41,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -138,40 +140,52 @@ private fun ModuleHome(model: ModuleSettingsUiModel, onAction: (ModuleSettingsAc
     }
     val moveUpLabel = stringResource(R.string.modules_move_up)
     val moveDownLabel = stringResource(R.string.modules_move_down)
-    LazyColumn(state = listState, modifier = Modifier.widthIn(max = 840.dp).fillMaxHeight(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth().fillMaxHeight(),
+        contentPadding = PaddingValues(horizontal = SettingsDimensions.ScreenHorizontalPadding, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(SettingsDimensions.SegmentedItemGap),
+    ) {
         item(key = "master", contentType = "control") {
-            Card {
-                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                        Text(stringResource(R.string.modules_enabled), style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(R.string.modules_enabled_description), style = MaterialTheme.typography.bodyMedium)
-                    }
+            SegmentedListItem(
+                onClick = remember(model.enabled, onAction) { { onAction(ModuleSettingsAction.SetEnabled(!model.enabled)) } },
+                shapes = ListItemDefaults.segmentedShapes(index = 0, count = 1),
+                modifier = Modifier.fillMaxWidth().padding(bottom = SettingsDimensions.SectionSpacing),
+                enabled = model.busy == null,
+                colors = ListItemDefaults.segmentedColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                trailingContent = {
                     val label = stringResource(R.string.modules_enabled)
-                    Switch(model.enabled, remember(onAction) { { onAction(ModuleSettingsAction.SetEnabled(it)) } }, enabled = model.busy == null,
+                    Switch(model.enabled, remember(onAction) { { onAction(ModuleSettingsAction.SetEnabled(it)) } },
+                        enabled = model.busy == null,
                         modifier = remember(label) { Modifier.semantics { contentDescription = label } })
-                }
-            }
+                },
+                supportingContent = { Text(stringResource(R.string.modules_enabled_description)) },
+            ) { Text(stringResource(R.string.modules_enabled), fontWeight = FontWeight.SemiBold) }
         }
         item(key = "tabs", contentType = "tabs") {
-            PrimaryTabRow(selectedTabIndex = model.tab) {
-                Tab(model.tab == 0, remember(onAction) { { onAction(ModuleSettingsAction.Tab(0)) } }, text = { Text(stringResource(R.string.modules_installed)) })
-                Tab(model.tab == 1, remember(onAction) { { onAction(ModuleSettingsAction.Tab(1)) } }, text = { Text(stringResource(R.string.modules_catalogs)) })
+            PrimaryTabRow(selectedTabIndex = model.tab, modifier = Modifier.padding(bottom = SettingsDimensions.SectionSpacing)) {
+                Tab(model.tab == 0, remember(onAction) { { onAction(ModuleSettingsAction.Tab(0)) } },
+                    text = { Text(stringResource(R.string.modules_installed)) })
+                Tab(model.tab == 1, remember(onAction) { { onAction(ModuleSettingsAction.Tab(1)) } },
+                    text = { Text(stringResource(R.string.modules_catalogs)) })
             }
         }
         item(key = "message", contentType = "message") { ModuleMessage(model, onAction) }
         if (model.tab == 0) {
             item(key = "summary", contentType = "summary") {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(stringResource(R.string.modules_counts, model.rows.size, model.enabledCount), style = MaterialTheme.typography.titleSmall)
-                    Text(stringResource(R.string.modules_order_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (!model.enabled) Text(stringResource(R.string.modules_off), style = MaterialTheme.typography.bodySmall)
+                Column(Modifier.padding(horizontal = 4.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(stringResource(R.string.modules_counts, model.rows.size, model.enabledCount),
+                        style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.modules_order_hint), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (!model.enabled) Text(stringResource(R.string.modules_off), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             if (model.rows.isEmpty()) item(key = "empty", contentType = "empty") {
                 ModuleEmpty(R.string.modules_empty, R.string.modules_empty_description, R.string.modules_import_file, onAction, ModuleSettingsAction.File)
             }
-            items(model.rows, key = { it.id }, contentType = { "module" }) { row ->
+            itemsIndexed(model.rows, key = { _, row -> row.id }, contentType = { _, _ -> "module" }) { index, row ->
                 ReorderableItem(reorder, key = row.id) { dragging ->
                     val moveUp = remember(row.id, onAction) { { onAction(ModuleSettingsAction.Move(row.id, -1)); true } }
                     val moveDown = remember(row.id, onAction) { { onAction(ModuleSettingsAction.Move(row.id, 1)); true } }
@@ -183,61 +197,97 @@ private fun ModuleHome(model: ModuleSettingsUiModel, onAction: (ModuleSettingsAc
                             }
                         }
                     }
-                    Card(Modifier.fillMaxWidth().then(accessibility).shadow(if (dragging) 4.dp else 0.dp, MaterialTheme.shapes.medium)) {
-                        ModuleRow(row, model, onAction) {
-                            Box(Modifier.size(48.dp).draggableHandle(enabled = model.busy == null,
-                                onDragStopped = { onAction(ModuleSettingsAction.CommitOrder) }), contentAlignment = Alignment.Center) {
-                                Icon(painterResource(R.drawable.drag_handle), stringResource(R.string.modules_move, row.name))
-                            }
-                        }
+                    ModuleRow(row, model, index, dragging, onAction, modifier = accessibility) {
+                        Box(
+                            Modifier.size(48.dp).draggableHandle(
+                                enabled = model.busy == null,
+                                onDragStopped = { onAction(ModuleSettingsAction.CommitOrder) },
+                            ),
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(painterResource(R.drawable.drag_handle), stringResource(R.string.modules_move, row.name)) }
                     }
                 }
             }
         } else {
+            item(key = "catalog_header", contentType = "summary") {
+                Text(stringResource(R.string.modules_catalogs), modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
+                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            }
             if (model.catalogs.isEmpty()) item(key = "catalogs_empty", contentType = "empty") {
                 ModuleEmpty(R.string.modules_catalogs_empty, R.string.modules_catalogs_empty_description, R.string.modules_add_catalog, onAction, ModuleSettingsAction.Url(true))
             }
-            items(model.catalogs, key = { it.id }, contentType = { "catalog" }) { row -> ModuleCatalogRow(row, model, onAction) }
-        }
-    }
-}
-
-@Composable
-private fun ModuleRow(row: ModuleRowUi, model: ModuleSettingsUiModel, onAction: (ModuleSettingsAction) -> Unit, handle: @Composable () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        handle()
-        Column(Modifier.weight(1f).clickable(enabled = model.busy == null,
-            onClick = remember(row.id, onAction) { { onAction(ModuleSettingsAction.OpenModule(row.id)) } }).padding(vertical = 14.dp, horizontal = 4.dp)) {
-            Text(row.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (row.subtitle.isNotBlank()) Text(row.subtitle, style = MaterialTheme.typography.bodySmall)
-            Text(stringResource(R.string.modules_position, row.position, model.rows.size), style = MaterialTheme.typography.labelMedium)
-            Text(stringResource(row.status), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Switch(row.enabled, remember(row.id, onAction) { { onAction(ModuleSettingsAction.Enable(row.id, it)) } },
-            enabled = model.busy == null, modifier = remember(row.name) { Modifier.semantics { contentDescription = row.name } })
-        ModuleMenu(model.menu == row.id, model.busy == null,
-            remember(row.id, onAction) { { onAction(ModuleSettingsAction.Menu(row.id)) } },
-            remember(onAction) { { onAction(ModuleSettingsAction.Menu(null)) } }) {
-            ModuleMenuItem(R.string.modules_move_up, row.position > 1, onAction, ModuleSettingsAction.Move(row.id, -1))
-            ModuleMenuItem(R.string.modules_move_down, row.position < model.rows.size, onAction, ModuleSettingsAction.Move(row.id, 1))
-            ModuleMenuItem(R.string.modules_check, true, onAction, ModuleSettingsAction.Check(row.id))
-            ModuleMenuItem(R.string.modules_check_update, row.canUpdate, onAction, ModuleSettingsAction.Update(row.id))
-            ModuleMenuItem(R.string.modules_remove, true, onAction, ModuleSettingsAction.Remove(row.id, false))
-        }
-    }
-}
-
-@Composable
-private fun ModuleCatalogRow(row: ModuleCatalogRowUi, model: ModuleSettingsUiModel, onAction: (ModuleSettingsAction) -> Unit) {
-    Card {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f).clickable(enabled = model.busy == null,
-                onClick = remember(row.id, onAction) { { onAction(ModuleSettingsAction.OpenCatalog(row.id)) } }).padding(4.dp)) {
-                Text(row.name.ifBlank { stringResource(R.string.modules_file_origin) }, style = MaterialTheme.typography.titleMedium)
-                Text(row.origin, style = MaterialTheme.typography.bodySmall)
-                Text(stringResource(R.string.modules_catalog_count, row.count), style = MaterialTheme.typography.bodyMedium)
-                Text(stringResource(R.string.modules_last_refresh, row.refreshed), style = MaterialTheme.typography.bodySmall)
+            itemsIndexed(model.catalogs, key = { _, row -> row.id }, contentType = { _, _ -> "catalog" }) { index, row ->
+                ModuleCatalogRow(row, model, index, onAction)
             }
+        }
+    }
+}
+
+@Composable
+private fun ModuleRow(
+    row: ModuleRowUi,
+    model: ModuleSettingsUiModel,
+    index: Int,
+    dragging: Boolean,
+    onAction: (ModuleSettingsAction) -> Unit,
+    modifier: Modifier = Modifier,
+    handle: @Composable () -> Unit,
+) {
+    SegmentedListItem(
+        selected = dragging,
+        onClick = remember(row.id, onAction) { { onAction(ModuleSettingsAction.OpenModule(row.id)) } },
+        shapes = ListItemDefaults.segmentedShapes(index = index, count = model.rows.size),
+        modifier = modifier.fillMaxWidth(),
+        enabled = model.busy == null,
+        colors = ListItemDefaults.segmentedColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        contentPadding = PaddingValues(horizontal = SettingsDimensions.RowHorizontalPadding, vertical = SettingsDimensions.RowVerticalPadding),
+        supportingContent = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (row.subtitle.isNotBlank()) Text(row.subtitle, style = MaterialTheme.typography.bodyMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ModuleBadge(stringResource(R.string.modules_position, row.position, model.rows.size), accent = true)
+                    ModuleBadge(stringResource(row.status))
+                }
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Switch(row.enabled, remember(row.id, onAction) { { onAction(ModuleSettingsAction.Enable(row.id, it)) } },
+                            enabled = model.busy == null,
+                            modifier = remember(row.name) { Modifier.semantics { contentDescription = row.name } })
+                        Text(stringResource(if (row.enabled) R.string.modules_provider_enabled else R.string.modules_provider_disabled),
+                            style = MaterialTheme.typography.labelLarge)
+                    }
+                    handle()
+                    ModuleMenu(model.menu == row.id, model.busy == null,
+                        remember(row.id, onAction) { { onAction(ModuleSettingsAction.Menu(row.id)) } },
+                        remember(onAction) { { onAction(ModuleSettingsAction.Menu(null)) } }) {
+                        ModuleMenuItem(R.string.modules_move_up, row.position > 1, onAction, ModuleSettingsAction.Move(row.id, -1))
+                        ModuleMenuItem(R.string.modules_move_down, row.position < model.rows.size, onAction, ModuleSettingsAction.Move(row.id, 1))
+                        ModuleMenuItem(R.string.modules_check, true, onAction, ModuleSettingsAction.Check(row.id))
+                        ModuleMenuItem(R.string.modules_check_update, row.canUpdate, onAction, ModuleSettingsAction.Update(row.id))
+                        ModuleMenuItem(R.string.modules_remove, true, onAction, ModuleSettingsAction.Remove(row.id, false))
+                    }
+                }
+            }
+        },
+    ) { Text(row.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
+}
+
+@Composable
+private fun ModuleCatalogRow(row: ModuleCatalogRowUi, model: ModuleSettingsUiModel, index: Int, onAction: (ModuleSettingsAction) -> Unit) {
+    SegmentedListItem(
+        onClick = remember(row.id, onAction) { { onAction(ModuleSettingsAction.OpenCatalog(row.id)) } },
+        shapes = ListItemDefaults.segmentedShapes(index = index, count = model.catalogs.size),
+        modifier = Modifier.fillMaxWidth(),
+        enabled = model.busy == null,
+        colors = ListItemDefaults.segmentedColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        contentPadding = PaddingValues(horizontal = SettingsDimensions.RowHorizontalPadding, vertical = SettingsDimensions.RowVerticalPadding),
+        leadingContent = { ModuleListIcon(R.drawable.language) },
+        trailingContent = {
             ModuleMenu(model.menu == row.id, model.busy == null,
                 remember(row.id, onAction) { { onAction(ModuleSettingsAction.Menu(row.id)) } },
                 remember(onAction) { { onAction(ModuleSettingsAction.Menu(null)) } }) {
@@ -245,6 +295,37 @@ private fun ModuleCatalogRow(row: ModuleCatalogRowUi, model: ModuleSettingsUiMod
                 ModuleMenuItem(R.string.modules_edit_catalog, true, onAction, ModuleSettingsAction.Url(true, row.id))
                 ModuleMenuItem(R.string.modules_remove, true, onAction, ModuleSettingsAction.Remove(row.id, true))
             }
+        },
+        supportingContent = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (row.origin.isNotBlank() && row.origin != row.name) Text(row.origin, style = MaterialTheme.typography.bodySmall)
+                ModuleBadge(stringResource(R.string.modules_catalog_count, row.count), accent = true)
+                if (row.refreshed.isNotBlank()) Text(stringResource(R.string.modules_last_refresh, row.refreshed),
+                    style = MaterialTheme.typography.bodySmall)
+            }
+        },
+    ) {
+        Text(row.name.ifBlank { stringResource(R.string.modules_file_origin) },
+            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+            maxLines = 3, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun ModuleBadge(label: String, accent: Boolean = false) {
+    Surface(shape = CircleShape, color = if (accent) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = if (accent) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant) {
+        Text(label, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+@Composable
+private fun ModuleListIcon(icon: Int) {
+    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
+        Box(Modifier.size(SettingsDimensions.RowIconSize), contentAlignment = Alignment.Center) {
+            Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(SettingsDimensions.RowIconInnerSize))
         }
     }
 }
@@ -354,34 +435,89 @@ private fun ModuleField(field: ModuleFieldUi, model: ModuleSettingsUiModel, onAc
 
 @Composable
 private fun ModuleCatalogDetails(detail: ModuleCatalogDetailUi, model: ModuleSettingsUiModel, onAction: (ModuleSettingsAction) -> Unit) {
-    LazyColumn(Modifier.widthIn(max = 840.dp).fillMaxHeight(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val refresh = remember(detail.row.id, onAction) { { onAction(ModuleSettingsAction.Refresh(detail.row.id)) } }
+    LazyColumn(
+        modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth().fillMaxHeight(),
+        contentPadding = PaddingValues(SettingsDimensions.ScreenHorizontalPadding),
+        verticalArrangement = Arrangement.spacedBy(SettingsDimensions.SegmentedItemGap),
+    ) {
         item(key = "message", contentType = "message") { ModuleMessage(model, onAction) }
         item(key = "summary", contentType = "summary") {
-            Text(detail.row.origin, style = MaterialTheme.typography.titleSmall)
-            Text(stringResource(R.string.modules_last_refresh, detail.row.refreshed))
-            TextButton(onClick = remember(detail.row.id, onAction) { { onAction(ModuleSettingsAction.Refresh(detail.row.id)) } }, enabled = model.busy == null && detail.row.origin.isNotBlank()) { Text(stringResource(R.string.modules_refresh)) }
-        }
-        items(detail.entries, key = { it.key }, contentType = { "entry" }) { entry ->
-            Card {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(entry.name, style = MaterialTheme.typography.titleMedium)
-                    if (entry.subtitle.isNotBlank()) Text(entry.subtitle, style = MaterialTheme.typography.bodySmall)
-                    if (entry.description.isNotBlank()) Text(entry.description, style = MaterialTheme.typography.bodyMedium)
-                    if (entry.installed) Text(stringResource(R.string.modules_already_installed), style = MaterialTheme.typography.labelMedium)
-                    if (entry.capabilities.isEmpty()) Text(stringResource(R.string.modules_capabilities_pending), style = MaterialTheme.typography.bodySmall)
-                    else {
-                        Text(stringResource(R.string.modules_capabilities), style = MaterialTheme.typography.labelMedium)
-                        entry.capabilities.forEach { Text(stringResource(it), style = MaterialTheme.typography.bodySmall) }
+            SegmentedListItem(
+                onClick = refresh,
+                shapes = ListItemDefaults.segmentedShapes(index = 0, count = 1),
+                modifier = Modifier.fillMaxWidth().padding(bottom = SettingsDimensions.SectionSpacing),
+                enabled = model.busy == null && detail.row.origin.isNotBlank(),
+                colors = ListItemDefaults.segmentedColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                supportingContent = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (detail.row.refreshed.isNotBlank()) Text(stringResource(R.string.modules_last_refresh, detail.row.refreshed))
+                        Text(stringResource(R.string.modules_compatibility_pending), style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = refresh, enabled = model.busy == null && detail.row.origin.isNotBlank()) {
+                            Text(stringResource(R.string.modules_refresh))
+                        }
                     }
-                    if (entry.supported) Text(stringResource(R.string.modules_compatibility_pending), style = MaterialTheme.typography.bodySmall)
-                    if (!entry.supported) Text(stringResource(R.string.modules_unsupported_description), color = MaterialTheme.colorScheme.error)
-                    else Button(onClick = remember(entry.download, onAction) { { entry.download?.let { onAction(ModuleSettingsAction.Install(it)) } } }, enabled = model.busy == null) {
-                        Text(stringResource(if (entry.installed) R.string.modules_check_update else R.string.modules_install))
+                },
+            ) { Text(stringResource(R.string.modules_catalog_count, detail.entries.size), fontWeight = FontWeight.SemiBold) }
+        }
+        if (detail.entries.isEmpty()) item(key = "empty", contentType = "empty") {
+            Text(stringResource(R.string.modules_catalog_entries_empty), modifier = Modifier.padding(16.dp),
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        itemsIndexed(detail.entries, key = { _, entry -> entry.key }, contentType = { _, _ -> "entry" }) { index, entry ->
+            ModuleCatalogEntry(entry, index, detail.entries.size, model, onAction)
+        }
+    }
+}
+
+@Composable
+private fun ModuleCatalogEntry(entry: ModuleCatalogEntryUi, index: Int, count: Int, model: ModuleSettingsUiModel, onAction: (ModuleSettingsAction) -> Unit) {
+    val toggle = remember(entry.key, onAction) { { onAction(ModuleSettingsAction.ToggleEntry(entry.key)) } }
+    val install: () -> Unit = remember(entry.download, onAction) { { entry.download?.let { onAction(ModuleSettingsAction.Install(it)) } } }
+    val loading = entry.download != null && model.busy == entry.download
+    SegmentedListItem(
+        onClick = toggle,
+        shapes = ListItemDefaults.segmentedShapes(index = index, count = count),
+        modifier = Modifier.fillMaxWidth(),
+        colors = ListItemDefaults.segmentedColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        contentPadding = PaddingValues(horizontal = SettingsDimensions.RowHorizontalPadding, vertical = SettingsDimensions.RowVerticalPadding),
+        supportingContent = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (entry.subtitle.isNotBlank()) Text(entry.subtitle, style = MaterialTheme.typography.bodyMedium)
+                if (entry.description.isNotBlank()) Text(entry.description, style = MaterialTheme.typography.bodyMedium,
+                    maxLines = if (entry.expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
+                if (entry.installed) ModuleBadge(stringResource(R.string.modules_already_installed), accent = true)
+                if (!entry.supported) Text(stringResource(R.string.modules_unsupported_description),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                if (entry.expanded) {
+                    if (entry.capabilities.isEmpty()) Text(stringResource(R.string.modules_capabilities_pending), style = MaterialTheme.typography.bodySmall)
+                    else FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        entry.capabilities.forEach { ModuleBadge(stringResource(it)) }
+                    }
+                }
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (entry.supported) Button(onClick = install, enabled = model.busy == null && entry.download != null) {
+                        if (loading) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(stringResource(if (loading) R.string.modules_loading else if (entry.installed) R.string.modules_check_update else R.string.modules_install))
+                    }
+                    TextButton(onClick = toggle) {
+                        Text(stringResource(if (entry.expanded) R.string.modules_hide_details else R.string.modules_show_details))
+                        Spacer(Modifier.width(4.dp))
+                        Icon(painterResource(if (entry.expanded) R.drawable.expand_less else R.drawable.expand_more),
+                            contentDescription = null, modifier = Modifier.size(18.dp))
                     }
                 }
             }
-        }
-    }
+        },
+    ) { Text(entry.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
 }
 
 @Composable
@@ -452,18 +588,48 @@ private fun ModuleDialogs(model: ModuleSettingsUiModel, onAction: (ModuleSetting
                 confirmButton = { TextButton(onClick = confirm, enabled = model.busy == null) { Text(stringResource(if (model.dialog == ModuleSettingsDialog.DISCARD) R.string.modules_discard else R.string.modules_remove)) } },
                 dismissButton = { TextButton(onClick = dismiss, enabled = model.busy == null) { Text(stringResource(android.R.string.cancel)) } })
         }
+        ModuleSettingsDialog.DIAGNOSTICS -> model.failure?.let { failure ->
+            AlertDialog(
+                onDismissRequest = dismiss,
+                title = { Text(stringResource(R.string.modules_diagnostics)) },
+                text = {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        item(key = "stage", contentType = "stage") {
+                            Text(stringResource(failure.stage), style = MaterialTheme.typography.titleSmall)
+                        }
+                        item(key = "message", contentType = "message") {
+                            model.message?.let { Text(stringResource(it)) }
+                        }
+                        item(key = "code", contentType = "code") {
+                            Text(failure.code, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = remember(onAction) { { onAction(ModuleSettingsAction.CopyDiagnostics) } }) {
+                        Text(stringResource(R.string.modules_diagnostics_copy))
+                    }
+                },
+                dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.modules_back)) } },
+            )
+        }
         null -> Unit
     }
 }
 
 @Composable
 private fun ModuleMessage(model: ModuleSettingsUiModel, onAction: (ModuleSettingsAction) -> Unit) {
-    if (model.busy != null) LinearProgressIndicator(Modifier.fillMaxWidth())
+    if (model.busy != null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 8.dp))
     model.message?.let { message ->
         Surface(color = if (model.messageIsError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
             shape = MaterialTheme.shapes.medium) {
             Row(Modifier.fillMaxWidth().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(message), Modifier.weight(1f).padding(vertical = 12.dp), style = MaterialTheme.typography.bodyMedium)
+                Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
+                    Text(stringResource(message), style = MaterialTheme.typography.bodyMedium)
+                    if (model.failure != null) TextButton(onClick = remember(onAction) { { onAction(ModuleSettingsAction.FailureDetails) } }) {
+                        Text(stringResource(R.string.modules_show_details))
+                    }
+                }
                 IconButton(onClick = remember(onAction) { { onAction(ModuleSettingsAction.ClearMessage) } }) { Icon(painterResource(R.drawable.close), stringResource(R.string.modules_dismiss)) }
             }
         }

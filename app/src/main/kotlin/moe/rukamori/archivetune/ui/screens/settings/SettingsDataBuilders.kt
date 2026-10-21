@@ -63,6 +63,14 @@ fun buildSettingsGroups(
             subtitle = stringResource(R.string.settings_playback_subtitle),
             accentColor = MaterialTheme.colorScheme.tertiary,
             onClick = { navController.navigate("settings/player") },
+    val modules =
+        SettingsItem(
+            key = "modules",
+            icon = painterResource(R.drawable.extension),
+            title = stringResource(R.string.modules_title),
+            subtitle = stringResource(R.string.modules_subtitle),
+            accentColor = MaterialTheme.colorScheme.secondary,
+            onClick = { navController.navigate("settings/modules") },
         )
     val canvas =
         SettingsItem(
@@ -117,15 +125,6 @@ fun buildSettingsGroups(
             subtitle = stringResource(R.string.android_auto_settings_subtitle),
             accentColor = MaterialTheme.colorScheme.primary,
             onClick = { navController.navigate("settings/android_auto") },
-        )
-    val modules =
-        SettingsItem(
-            key = "modules",
-            icon = painterResource(R.drawable.auto_awesome),
-            title = stringResource(R.string.modules_title),
-            subtitle = stringResource(R.string.modules_subtitle),
-            accentColor = MaterialTheme.colorScheme.secondary,
-            onClick = { navController.navigate("settings/modules") },
         )
     val aiIntegration =
         SettingsItem(

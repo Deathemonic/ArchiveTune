@@ -181,7 +181,7 @@ class ResolveModuleAudioUseCase @Inject constructor(
                             else -> ModuleCheckStatus.FAILED
                         },
                             System.currentTimeMillis(), System.currentTimeMillis() - started, failure, module.revision, phase, candidateCount,
-                            code = listOfNotNull((error as? ModuleException)?.stage?.name, error.javaClass.simpleName,
+                            code = listOfNotNull((error as? ModuleException)?.stage?.name, (error as? ModuleException)?.diagnosticCode, error.javaClass.simpleName,
                                 error.cause?.javaClass?.simpleName).joinToString("/")))
                         cache[key] = Entry(module.id, module.revision, target, null, System.currentTimeMillis() + 10_000)
                     }

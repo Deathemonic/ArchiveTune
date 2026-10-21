@@ -52,7 +52,7 @@ class ModuleHttpClient(configuredClient: OkHttpClient? = null) {
         return response.getString("text") to response.getString("url")
     }
 
-    suspend fun fetch(json: String, baseUrl: String, namespace: String): String {
+    suspend fun fetch(json: String, baseUrl: String, namespace: String, onStatus: (Int) -> Unit = {}): String {
         val input = JSONObject(json)
         val id = namespace + ":" + input.getString("id")
         val url = webUrl(resolveUrl(input.getString("url"), baseUrl))
@@ -69,7 +69,7 @@ class ModuleHttpClient(configuredClient: OkHttpClient? = null) {
         val requestBody = if (method in listOf("GET", "HEAD")) null else
             (body ?: byteArrayOf()).toRequestBody(headers.optString("content-type", headers.optString("Content-Type")).toMediaTypeOrNull())
         builder.method(method, requestBody)
-        return execute(builder.build(), id, MAX_BODY_BYTES).toString()
+        return execute(builder.build(), id, MAX_BODY_BYTES).also { onStatus(it.getInt("status")) }.toString()
     }
 
     fun abort(id: String) {

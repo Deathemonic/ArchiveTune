@@ -14,7 +14,8 @@ enum class ModuleFailure { INVALID_DOCUMENT, UNSUPPORTED, INVALID_CONFIGURATION,
 
 enum class ModuleLoadStage { DOWNLOAD, DECODE, ENGINE, HOST, PROVIDER, MANIFEST, STORAGE }
 
-class ModuleException(val failure: ModuleFailure, cause: Throwable? = null, val stage: ModuleLoadStage? = null) : Exception(failure.name, cause)
+class ModuleException(val failure: ModuleFailure, cause: Throwable? = null, val stage: ModuleLoadStage? = null,
+    val diagnosticCode: String? = null) : Exception(failure.name, cause)
 
 enum class ModuleSettingType { TEXT, PASSWORD, NUMBER, BOOLEAN, SELECT, UNSUPPORTED }
 

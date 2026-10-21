@@ -112,10 +112,15 @@ globalThis.setTimeout = function(fn,millis = 0,...args) {
   if (typeof fn !== 'function' || timers.size >= 128) throw new TypeError('Invalid timer');
   const id = ++timerSequence;
   timers.set(id,true);
+  __moduleTimerCreate(String(id));
   __moduleDelay(JSON.stringify({id:String(id),millis:Math.max(0,Math.min(Number(millis)||0,15000))})).then(() => { if(timers.delete(id))fn(...args); });
   return id;
 };
 globalThis.clearTimeout = function(id) { timers.delete(id); __moduleClearTimer(String(id)); };
+globalThis.__moduleClearTimers = function() {
+  for (const id of timers.keys()) __moduleClearTimer(String(id));
+  timers.clear();
+};
 globalThis.Blob = class Blob {
   constructor(parts = [],options = {}) {
     this.type = options.type || '';

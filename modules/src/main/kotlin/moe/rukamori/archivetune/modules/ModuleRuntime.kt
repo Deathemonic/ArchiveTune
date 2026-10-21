@@ -23,12 +23,22 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 
 class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
     private val applicationContext = context.applicationContext
     private val lock = Mutex()
     private val engines = LinkedHashMap<String, Engine>(8, 0.75f, true)
-    private data class Engine(val source: String, val runtime: QuickJs, val manifest: ModuleManifest)
+    private data class RequestProblem(val failure: ModuleFailure, val code: String)
+    private class Engine(val source: String, val runtime: QuickJs, val manifest: ModuleManifest,
+        val timers: ConcurrentHashMap<String, CompletableDeferred<Unit>>, val requestProblem: AtomicReference<RequestProblem?>) {
+        fun close() {
+            timers.values.forEach { it.complete(Unit) }
+            timers.clear()
+            runtime.close()
+        }
+    }
 
     suspend fun inspect(source: String, origin: String): ModuleManifest =
         withTimeoutOrNull(5_000) {
@@ -36,7 +46,7 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
                 lock.withLock {
                     val engine = create(source, origin)
                     try { engine.manifest } finally {
-                        try { engine.runtime.close() }
+                        try { engine.close() }
                         catch (error: Exception) { throw ModuleException(ModuleFailure.EXECUTION, error, ModuleLoadStage.ENGINE) }
                     }
                 }
@@ -45,7 +55,11 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
 
     suspend fun search(id: String, source: String, origin: String, query: String, settings: Map<String, String>): List<ModuleTrack> {
         val result = call(id, source, origin, "searchTracks", JSONArray().put(query).put(10).put(context(settings)))
-        val tracks = (result as? JSONObject)?.optJSONArray("tracks") ?: result as? JSONArray ?: JSONArray()
+        val tracks = when (result) {
+            is JSONArray -> result
+            is JSONObject -> result.optJSONArray("tracks")
+            else -> null
+        } ?: throw ModuleException(ModuleFailure.EXECUTION, stage = ModuleLoadStage.PROVIDER, diagnosticCode = "INVALID_SEARCH_RESULT")
         return (0 until minOf(tracks.length(), 100)).mapNotNull { index ->
             val track = tracks.optJSONObject(index) ?: return@mapNotNull null
             val trackId = track.text("id").takeIf(String::isNotBlank) ?: return@mapNotNull null
@@ -71,7 +85,7 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
     suspend fun stream(id: String, source: String, origin: String, trackId: String, settings: Map<String, String>, metadata: ModuleTrack? = null): ModuleStream {
         val quality = settings["quality"]?.let(::parseJsonValue) ?: JSONObject.NULL
         val value = call(id, source, origin, "getTrackStreamUrl", JSONArray().put(trackId).put(quality).put(context(settings, metadata))) as? JSONObject
-            ?: throw ModuleException(ModuleFailure.EXECUTION)
+            ?: throw ModuleException(ModuleFailure.EXECUTION, stage = ModuleLoadStage.PROVIDER, diagnosticCode = "INVALID_STREAM_RESULT")
         val url = ModuleHttpClient.webUrl(value.text("streamUrl").ifBlank { value.text("url") })
         val track = value.optJSONObject("track") ?: JSONObject()
         val headers = java.util.TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER)
@@ -116,36 +130,76 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
     }
 
     suspend fun unload(id: String) {
-        lock.withLock { engines.keys.filter { it == id || it.startsWith("$id:") }.forEach { engines.remove(it)?.runtime?.close() } }
+        lock.withLock { engines.keys.filter { it == id || it.startsWith("$id:") }.forEach { engines.remove(it)?.close() } }
     }
 
     private suspend fun call(id: String, source: String, origin: String, function: String, args: JSONArray): Any = withContext(Dispatchers.Default) {
         lock.withLock {
             var engine = engines[id]
             if (engine?.source != source) {
-                engines.remove(id)?.runtime?.close()
+                engines.remove(id)?.close()
                 engine = create(source, origin)
                 engines[id] = engine
-                while (engines.size > 2) engines.remove(engines.keys.first())?.runtime?.close()
+                while (engines.size > 2) engines.remove(engines.keys.first())?.close()
             }
-            val runtime = checkNotNull(engine).runtime
+            val session = checkNotNull(engine)
+            val runtime = session.runtime
+            session.requestProblem.set(null)
             try {
-                val result = runtime.evaluate<String>(
-                    "(async()=>{const args=$args;" +
-                        (if (function == "getTrackStreamUrl") "if(args[1]===null)args[1]=undefined;" else "") +
-                        "const result=await globalThis.__provider[${JSONObject.quote(function)}](...args);" +
-                        "return JSON.stringify(result===undefined?null:result);})();",
+                runtime.evaluate<String>(
+                    """
+                    globalThis.__moduleResult = null;
+                    (async () => {
+                        try {
+                            const args = $args;
+                            ${if (function == "getTrackStreamUrl") "if(args[1]===null)args[1]=undefined;" else ""}
+                            const value = await globalThis.__provider[${JSONObject.quote(function)}](...args);
+                            globalThis.__moduleResult = JSON.stringify({value: value === undefined ? null : value});
+                        } catch (error) {
+                            const name = ['Error','TypeError','ReferenceError','SyntaxError','RangeError','URIError','EvalError','AbortError'].includes(error?.name) ? error.name : 'Error';
+                            const frame = String(error?.stack || '').match(/module-(?:host|provider|call)\.js:\d+(?::\d+)?/);
+                            globalThis.__moduleResult = JSON.stringify({failed: true, name, frame: frame ? frame[0] : ''});
+                        } finally {
+                            globalThis.__moduleClearTimers();
+                        }
+                    })();
+                    "module-call-started";
+                    """.trimIndent(),
                     filename = "module-call.js",
                 )
-                if (result.length > ModuleHttpClient.MAX_BODY_BYTES) throw ModuleException(ModuleFailure.EXECUTION)
-                org.json.JSONTokener(result).nextValue()
+                val result = runtime.evaluate<String>(
+                    "(()=>{const value=globalThis.__moduleResult;globalThis.__moduleResult=null;return value||'';})();",
+                    filename = "module-result.js",
+                )
+                if (result.isBlank() || result.length > ModuleHttpClient.MAX_BODY_BYTES) {
+                    throw ModuleException(ModuleFailure.EXECUTION, stage = ModuleLoadStage.PROVIDER, diagnosticCode = "INVALID_RESULT")
+                }
+                val envelope = JSONObject(result)
+                if (envelope.optBoolean("failed")) {
+                    val name = envelope.optString("name", "Error")
+                    val problem = session.requestProblem.get()
+                    val failure = if (name == "Error" || name == "AbortError") problem?.failure ?: ModuleFailure.EXECUTION else ModuleFailure.EXECUTION
+                    val detail = listOf(name, envelope.optString("frame"), problem?.code.orEmpty()).filter(String::isNotBlank).joinToString("/")
+                    throw ModuleException(failure, stage = ModuleLoadStage.PROVIDER, diagnosticCode = detail)
+                }
+                if (!envelope.has("value") || envelope.isNull("value")) {
+                    throw ModuleException(ModuleFailure.EXECUTION, stage = ModuleLoadStage.PROVIDER, diagnosticCode = "INVALID_RESULT")
+                }
+                val value = envelope.get("value")
+                val problem = session.requestProblem.get()
+                val tracks = (value as? JSONObject)?.optJSONArray("tracks") ?: value as? JSONArray
+                if (function == "searchTracks" && tracks?.length() == 0 && problem != null) {
+                    throw ModuleException(problem.failure, stage = ModuleLoadStage.PROVIDER, diagnosticCode = problem.code)
+                }
+                value
             } catch (error: Throwable) {
-                closeAfterFailure(engines.remove(id)?.runtime, error)
+                closeAfterFailure(error) { engines.remove(id)?.close() }
                 when (error) {
                     is CancellationException -> throw error
                     is ModuleException -> throw error
                     is QuickJsInterruptedException -> throw ModuleException(ModuleFailure.TIMEOUT, error, ModuleLoadStage.PROVIDER)
-                    is Exception, is LinkageError -> throw ModuleException(ModuleFailure.EXECUTION, error, ModuleLoadStage.PROVIDER)
+                    is Exception, is LinkageError -> throw ModuleException(ModuleFailure.EXECUTION, error, ModuleLoadStage.PROVIDER,
+                        session.requestProblem.get()?.code)
                     else -> throw error
                 }
             }
@@ -155,6 +209,8 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
     private suspend fun create(source: String, origin: String): Engine {
         var stage = ModuleLoadStage.DECODE
         var runtime: QuickJs? = null
+        val timers = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+        val requestProblem = AtomicReference<RequestProblem?>(null)
         try {
             val code = ModuleSourceDecoder.decode(source).replaceFirst(Regex("^export\\s+default\\s+"), "return ")
             stage = ModuleLoadStage.ENGINE
@@ -164,15 +220,34 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
             engine.maxStackSize = 1024L * 1024
             engine.evaluationTimeoutMillis = 15_000
             val namespace = java.util.UUID.randomUUID().toString()
-            engine.asyncFunction<String, String>("__moduleFetch") { json -> http.fetch(json, origin, namespace) }
-            val timers = java.util.concurrent.ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+            engine.asyncFunction<String, String>("__moduleFetch") { json ->
+                try {
+                    http.fetch(json, origin, namespace) { status ->
+                        if (status !in 200..299) requestProblem.set(RequestProblem(ModuleFailure.NETWORK, "HTTP_$status"))
+                    }
+                } catch (error: CancellationException) { throw error }
+                catch (error: Exception) {
+                    val failure = (error as? ModuleException)?.failure ?: ModuleFailure.NETWORK
+                    requestProblem.set(RequestProblem(failure, "REQUEST_${failure.name}"))
+                    throw error
+                }
+            }
+            engine.function("__moduleTimerCreate") { args ->
+                val id = args.firstOrNull()?.toString() ?: throw ModuleException(ModuleFailure.EXECUTION)
+                if (id.length > 64 || timers.size >= 128 || timers.putIfAbsent(id, CompletableDeferred()) != null) {
+                    throw ModuleException(ModuleFailure.EXECUTION)
+                }
+                Unit
+            }
             engine.asyncFunction<String, Unit>("__moduleDelay") { json ->
                 val value = JSONObject(json)
                 val id = value.getString("id")
-                val signal = CompletableDeferred<Unit>()
-                timers[id] = signal
-                try { withTimeoutOrNull(value.optLong("millis").coerceIn(0, 15_000)) { signal.await() }; Unit }
-                finally { timers.remove(id, signal) }
+                val signal = timers[id]
+                if (signal != null) {
+                    try { withTimeoutOrNull(value.optLong("millis").coerceIn(0, 15_000)) { signal.await() } }
+                    finally { timers.remove(id, signal) }
+                }
+                Unit
             }
             engine.function("__moduleClearTimer") { args -> args.firstOrNull()?.toString()?.let { timers.remove(it)?.complete(Unit) }; Unit }
             engine.function("__moduleAbort") { args -> args.firstOrNull()?.toString()?.let { http.abort("$namespace:$it") }; Unit }
@@ -192,17 +267,21 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
             engine.evaluate<String>(host + "\n;\"module-host-ready\";", filename = "module-host.js")
             stage = ModuleLoadStage.PROVIDER
             engine.evaluate<String>(
-                "globalThis.__provider=(function(){const module={exports:{}};const exports=module.exports;" +
+                "globalThis.__provider=(function(){const module={exports:{}};const exports=module.exports;const self=globalThis;" +
                     code + "\n;return module.exports;})();\n\"module-provider-ready\";",
                 filename = "module-provider.js",
             )
             stage = ModuleLoadStage.MANIFEST
-            return Engine(source, engine, manifest(engine))
+            return Engine(source, engine, manifest(engine), timers, requestProblem)
         } catch (error: Throwable) {
-            closeAfterFailure(runtime, error)
+            closeAfterFailure(error) {
+                timers.values.forEach { it.complete(Unit) }
+                timers.clear()
+                runtime?.close()
+            }
             when (error) {
                 is CancellationException -> throw error
-                is ModuleException -> throw ModuleException(error.failure, error, error.stage ?: stage)
+                is ModuleException -> throw ModuleException(error.failure, error, error.stage ?: stage, error.diagnosticCode)
                 is QuickJsInterruptedException -> throw ModuleException(ModuleFailure.TIMEOUT, error, stage)
                 is Exception, is LinkageError -> throw ModuleException(ModuleFailure.EXECUTION, error, stage)
                 else -> throw error
@@ -210,8 +289,8 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
         }
     }
 
-    private fun closeAfterFailure(runtime: QuickJs?, error: Throwable) {
-        try { runtime?.close() }
+    private fun closeAfterFailure(error: Throwable, close: () -> Unit) {
+        try { close() }
         catch (closing: Throwable) { if (closing !== error) error.addSuppressed(closing) }
     }
 

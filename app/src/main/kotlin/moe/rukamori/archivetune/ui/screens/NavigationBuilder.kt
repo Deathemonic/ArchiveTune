@@ -159,9 +159,8 @@ fun NavGraphBuilder.navigationBuilder(
     composable(MusicRecognitionRoute) {
         MusicRecognitionScreen(navController)
     }
-    composable(MusicRecognitionDetailsRoute) { backStackEntry ->
-        val encodedTrack = backStackEntry.arguments?.getString("encodedTrack").orEmpty()
-        MusicRecognitionDetailsScreen(navController, encodedTrack)
+    composable(MusicRecognitionDetailsRoute) {
+        MusicRecognitionDetailsScreen(navController)
     }
     composable(Screens.MoodAndGenres.route) {
         MoodAndGenresScreen(navController)

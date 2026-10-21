@@ -126,52 +126,9 @@ class ModuleRepository @Inject constructor(@ApplicationContext private val conte
 
     suspend fun catalog(url: String, existingId: String? = null, initialText: String? = null): ModuleImport.Catalog {
         val existing = snapshot().catalogs.firstOrNull { it.id == existingId }
-        val entries = LinkedHashMap<String, ModuleCatalogEntry>()
-        val visited = HashSet<String>()
-        suspend fun load(address: String, depth: Int) {
-            if (depth > 4 || visited.size >= 32) throw ModuleException(ModuleFailure.INVALID_DOCUMENT)
-            val normalized = if (address.isBlank() && depth == 0 && initialText != null) "file" else ModuleHttpClient.webUrl(address)
-            if (!visited.add(normalized)) return
-            val (text, finalUrl) = if (depth == 0 && initialText != null) initialText to url else http.document(normalized)
-            val root = try { JSONObject(text) } catch (error: Exception) { throw ModuleException(ModuleFailure.INVALID_DOCUMENT, error) }
-            fun append(array: JSONArray, base: String, providerCategory: Boolean = true) {
-                for (index in 0 until array.length()) {
-                    val item = array.optJSONObject(index) ?: continue
-                    val download = item.optString("download", item.optString("url")).takeIf(String::isNotBlank)
-                        ?.let { ModuleHttpClient.webUrl(ModuleHttpClient.resolveUrl(it, base)) }
-                    val id = item.optString("id").ifBlank { download.orEmpty() }
-                    if (id.isBlank()) continue
-                    val type = item.optString("type", "MODULE")
-                    val supported = providerCategory && type.equals("MODULE", true) && download != null
-                    val entry = ModuleCatalogEntry(id, item.optString("name", id), item.optString("version"),
-                        item.optString("author"), item.optString("description"), download, supported,
-                        (item.optJSONArray("labels") ?: item.optJSONArray("tags")).strings(), item.optJSONArray("capabilities").strings())
-                    entries.putIfAbsent(download ?: "$base#$id", entry)
-                    if (entries.size > 1000) throw ModuleException(ModuleFailure.INVALID_DOCUMENT)
-                }
-            }
-            root.keys().forEach { key ->
-                if (key.startsWith("category:") || key == "modules") {
-                    root.optJSONArray(key)?.let { append(it, finalUrl, key !in listOf("category:artworks", "category:testing")) }
-                }
-            }
-            val external = root.optJSONArray("external_sources") ?: JSONArray()
-            for (index in 0 until external.length()) {
-                val source = external.optJSONObject(index) ?: continue
-                source.optJSONArray("modules")?.let {
-                    val base = source.optString("baseUrl").takeIf(String::isNotBlank)
-                        ?.let { value -> ModuleHttpClient.resolveUrl(value.trimEnd('/') + "/", finalUrl) } ?: finalUrl
-                    append(it, base)
-                }
-                source.optString("url").takeIf(String::isNotBlank)?.let { load(ModuleHttpClient.resolveUrl(it, finalUrl), depth + 1) }
-            }
-            if (root.keys().asSequence().none { it.startsWith("category:") || it in listOf("modules", "external_sources") }) {
-                throw ModuleException(ModuleFailure.INVALID_DOCUMENT)
-            }
-        }
-        load(url.trim(), 0)
+        val document = ModuleCatalogReader(http).read(url, initialText)
         return ModuleImport.Catalog(SavedModuleCatalog(existing?.id ?: UUID.randomUUID().toString(),
-            existing?.name ?: Uri.parse(url).host.orEmpty(), url.trim().takeIf(String::isNotBlank)?.let(ModuleHttpClient::webUrl).orEmpty(), System.currentTimeMillis(), entries.values.toList()))
+            existing?.name ?: document.name, document.origin, System.currentTimeMillis(), document.entries))
     }
 
     suspend fun refreshCatalog(id: String) {

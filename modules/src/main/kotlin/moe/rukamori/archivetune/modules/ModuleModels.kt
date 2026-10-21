@@ -81,7 +81,7 @@ data class ModuleManifest(
             return ModuleManifest(
                 value.optString("id"), value.optString("name"), value.optString("version"),
                 value.optString("author"), value.optString("description"),
-                value.optJSONArray("labels").strings(), fields, value.optJSONArray("capabilities").strings(),
+                (value.optJSONArray("labels").strings() + value.optJSONArray("tags").strings()).distinct(), fields, value.optJSONArray("capabilities").strings(),
             ).also {
                 if (it.id.isBlank() || it.name.isBlank() || !it.capabilities.containsAll(listOf("searchTracks", "getTrackStreamUrl"))) {
                     throw ModuleException(ModuleFailure.UNSUPPORTED)

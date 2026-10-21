@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
+enum class ModuleQualityTag { HI_RES, MAX }
+
 class ModuleSettingsUseCases @Inject constructor(
     private val repository: ModuleRepository,
     private val diagnostics: ModuleDiagnostics,
@@ -36,6 +38,22 @@ class ModuleSettingsUseCases @Inject constructor(
     suspend fun catalog(value: String, id: String?) = repository.catalog(value, id)
     suspend fun refresh(id: String) = repository.refreshCatalog(id)
     suspend fun commit(value: ModuleImport) = repository.commit(value)
+
+    fun qualityTags(labels: List<String>, settings: List<ModuleSetting> = emptyList()): List<ModuleQualityTag> {
+        val declarations = labels + settings.filter { field ->
+            !field.secret && QUALITY_FIELD.containsMatchIn(field.key + " " + field.label)
+        }.flatMap { field ->
+            field.options.flatMap { option -> listOf(option.label, qualityValue(option.valueJson)) } + qualityValue(field.defaultJson)
+        }
+        val normalized = declarations.map { it.lowercase(java.util.Locale.ROOT).replace('_', ' ').replace('-', ' ') }
+        return buildList {
+            if (normalized.any(HI_RES::containsMatchIn)) add(ModuleQualityTag.HI_RES)
+            if (normalized.any(MAX_QUALITY::containsMatchIn)) add(ModuleQualityTag.MAX)
+        }
+    }
+
+    private fun qualityValue(value: String): String = try { parseJsonValue(value) as? String ?: "" }
+    catch (_: org.json.JSONException) { "" }
 
     suspend fun update(id: String): ModuleImport.Provider? {
         val module = repository.snapshot().modules.first { it.id == id }
@@ -67,6 +85,12 @@ class ModuleSettingsUseCases @Inject constructor(
                 code = listOfNotNull((error as? ModuleException)?.stage?.name, (error as? ModuleException)?.diagnosticCode, error.javaClass.simpleName,
                     error.cause?.javaClass?.simpleName).joinToString("/")))
         }
+    }
+
+    private companion object {
+        val QUALITY_FIELD = Regex("quality|resolution|format", RegexOption.IGNORE_CASE)
+        val HI_RES = Regex("""\b(?:hi(?:gh)?\s*res(?:olution)?|24\s*bit)\b""")
+        val MAX_QUALITY = Regex("""\bmax(?:imum)?(?:\s+quality)?\b""")
     }
 }
 

@@ -83,7 +83,7 @@ class ModuleCatalogReader(private val http: ModuleHttpClient) {
                     val entry = ModuleCatalogEntry(id, item.optString("name", id), item.optString("version"),
                         item.optString("author"), item.optString("description"), download,
                         providerCategory && item.optString("type", "MODULE").equals("MODULE", true) && download != null,
-                        (item.optJSONArray("labels") ?: item.optJSONArray("tags")).strings(), item.optJSONArray("capabilities").strings())
+                        (item.optJSONArray("labels").strings() + item.optJSONArray("tags").strings()).distinct(), item.optJSONArray("capabilities").strings())
                     entries.putIfAbsent(download ?: "$entryBase#$id", entry)
                     if (entries.size > 1000) throw ModuleException(ModuleFailure.INVALID_DOCUMENT)
                 }

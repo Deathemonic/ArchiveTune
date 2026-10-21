@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -121,8 +122,8 @@ private fun ModuleSettingsContent(state: ModuleSettingsState, onAction: (ModuleS
     }) { padding ->
         val insets = LocalPlayerAwareWindowInsets.current
         val contentModifier = remember(padding, insets) {
-            Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())
-                .windowInsetsPadding(insets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+            Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
+                .windowInsetsPadding(insets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)).clipToBounds()
         }
         Box(contentModifier, contentAlignment = Alignment.TopCenter) {
             when (state) {
@@ -168,7 +169,7 @@ private fun ModuleHome(model: ModuleSettingsUiModel, onAction: (ModuleSettingsAc
                 checked = model.enabled,
                 onCheckedChange = remember(onAction) { { onAction(ModuleSettingsAction.SetEnabled(it)) } },
                 shapes = ListItemDefaults.segmentedShapes(index = 0, count = 1),
-                modifier = Modifier.fillMaxWidth().padding(bottom = SettingsDimensions.SectionSpacing),
+                modifier = Modifier.fillMaxWidth().padding(bottom = SettingsDimensions.SectionSpacing).semantics { role = Role.Switch },
                 enabled = model.busy == null,
                 colors = ListItemDefaults.segmentedColors(),
                 leadingContent = { ModuleListIcon(R.drawable.extension) },
@@ -268,22 +269,19 @@ private fun ModuleRow(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (row.subtitle.isNotBlank()) Text(row.subtitle, style = MaterialTheme.typography.bodyMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    row.qualityTags.forEach { ModuleBadge(stringResource(it), accent = true) }
                     ModuleBadge(stringResource(R.string.modules_position, row.position, model.rows.size), accent = true)
                     ModuleBadge(if (row.playbackStatus) stringResource(R.string.modules_playback_status, stringResource(row.status)) else stringResource(row.status))
                 }
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     itemVerticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Switch(row.enabled, remember(row.id, onAction) { { onAction(ModuleSettingsAction.Enable(row.id, it)) } },
-                            enabled = model.busy == null,
-                            modifier = remember(row.name) { Modifier.semantics { contentDescription = row.name } })
-                        Text(stringResource(if (row.enabled) R.string.modules_provider_enabled else R.string.modules_provider_disabled),
-                            style = MaterialTheme.typography.labelLarge)
-                    }
+                    Switch(row.enabled, remember(row.id, onAction) { { onAction(ModuleSettingsAction.Enable(row.id, it)) } },
+                        enabled = model.busy == null,
+                        modifier = remember(row.name) { Modifier.semantics { contentDescription = row.name } })
                     handle()
                     ModuleMenu(model.menu == row.id, model.busy == null,
                         remember(row.id, onAction) { { onAction(ModuleSettingsAction.Menu(row.id)) } },
@@ -336,7 +334,7 @@ private fun ModuleCatalogRow(row: ModuleCatalogRowUi, model: ModuleSettingsUiMod
 
 @Composable
 internal fun ModuleBadge(label: String, accent: Boolean = false) {
-    Surface(shape = CircleShape, color = if (accent) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+    Surface(shape = MaterialTheme.shapes.small, color = if (accent) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = if (accent) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant) {
         Text(label, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             style = MaterialTheme.typography.labelMedium)
@@ -404,7 +402,12 @@ private fun ModuleCatalogEntry(entry: ModuleCatalogEntryUi, index: Int, count: I
                 if (entry.subtitle.isNotBlank()) Text(entry.subtitle, style = MaterialTheme.typography.bodyMedium)
                 if (entry.description.isNotBlank()) Text(entry.description, style = MaterialTheme.typography.bodyMedium,
                     maxLines = if (entry.expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
-                if (entry.installed) ModuleBadge(stringResource(R.string.modules_already_installed), accent = true)
+                if (entry.installed || entry.qualityTags.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (entry.installed) ModuleBadge(stringResource(R.string.modules_already_installed), accent = true)
+                        entry.qualityTags.forEach { ModuleBadge(stringResource(it), accent = true) }
+                    }
+                }
                 if (!entry.supported) Text(stringResource(R.string.modules_unsupported_description),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 if (entry.expanded) {

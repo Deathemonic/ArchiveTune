@@ -10,7 +10,6 @@ package moe.rukamori.archivetune.ui.screens.settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
@@ -19,7 +18,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -61,9 +63,8 @@ internal fun ModuleDetails(detail: ModuleDetailUi, model: ModuleSettingsUiModel,
             SegmentedListItem(
                 checked = detail.row.enabled,
                 onCheckedChange = remember(detail.row.id, onAction) { { onAction(ModuleSettingsAction.Enable(detail.row.id, it)) } },
-                shapes = ListItemDefaults.segmentedShapes(index = 0, count = 2),
-                modifier = Modifier.fillMaxWidth(), enabled = model.busy == null,
-                leadingContent = { ModuleListIcon(R.drawable.extension) },
+                shapes = moduleSettingShapes(index = 0, count = 2),
+                modifier = Modifier.fillMaxWidth().semantics { role = Role.Switch }, enabled = model.busy == null,
                 trailingContent = { Switch(detail.row.enabled, onCheckedChange = null, enabled = model.busy == null) },
                 supportingContent = if (!model.enabled) { { Text(stringResource(R.string.modules_off)) } } else null,
                 colors = ListItemDefaults.segmentedColors(),
@@ -73,30 +74,24 @@ internal fun ModuleDetails(detail: ModuleDetailUi, model: ModuleSettingsUiModel,
             }
         }
         item(key = "priority", contentType = "priority") {
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.modules_position, detail.row.position, model.rows.size), style = MaterialTheme.typography.titleSmallEmphasized) },
-                supportingContent = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(stringResource(R.string.modules_order_hint), style = MaterialTheme.typography.bodySmall)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            FilledTonalButton(onClick = remember(detail.row.id, onAction) { { onAction(ModuleSettingsAction.Move(detail.row.id, -1)) } },
-                                shapes = ButtonDefaults.shapes(), enabled = model.busy == null && detail.row.position > 1) {
-                                Icon(painterResource(R.drawable.arrow_upward), null, Modifier.size(ButtonDefaults.IconSize))
-                                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                                Text(stringResource(R.string.modules_move_up))
-                            }
-                            FilledTonalButton(onClick = remember(detail.row.id, onAction) { { onAction(ModuleSettingsAction.Move(detail.row.id, 1)) } },
-                                shapes = ButtonDefaults.shapes(), enabled = model.busy == null && detail.row.position < model.rows.size) {
-                                Icon(painterResource(R.drawable.arrow_downward), null, Modifier.size(ButtonDefaults.IconSize))
-                                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                                Text(stringResource(R.string.modules_move_down))
-                            }
+            SegmentedListItem(
+                shapes = ListItemDefaults.segmentedShapes(index = 1, count = 2),
+                modifier = Modifier.fillMaxWidth(),
+                colors = ListItemDefaults.segmentedColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                supportingContent = { Text(stringResource(R.string.modules_priority_description), style = MaterialTheme.typography.bodySmall) },
+                trailingContent = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        FilledTonalIconButton(onClick = remember(detail.row.id, onAction) { { onAction(ModuleSettingsAction.Move(detail.row.id, -1)) } },
+                            enabled = model.busy == null && detail.row.position > 1) {
+                            Icon(painterResource(R.drawable.arrow_upward), stringResource(R.string.modules_move_up))
+                        }
+                        FilledTonalIconButton(onClick = remember(detail.row.id, onAction) { { onAction(ModuleSettingsAction.Move(detail.row.id, 1)) } },
+                            enabled = model.busy == null && detail.row.position < model.rows.size) {
+                            Icon(painterResource(R.drawable.arrow_downward), stringResource(R.string.modules_move_down))
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth().clip(moduleGroupShape(index = 1, count = 2)),
-                colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-            )
+            ) { Text(stringResource(R.string.modules_position, detail.row.position, model.rows.size), style = MaterialTheme.typography.titleSmallEmphasized) }
         }
         item(key = "capabilities_header", contentType = "heading") { ModuleSectionHeading(R.string.modules_capabilities) }
         item(key = "capabilities", contentType = "capabilities") {
@@ -188,20 +183,14 @@ internal fun ModuleActionRow(label: Int, icon: Int, index: Int, count: Int, modi
 }
 
 @Composable
-private fun moduleGroupShape(index: Int, count: Int): CornerBasedShape {
-    val outer = MaterialTheme.shapes.large
-    val inner = MaterialTheme.shapes.extraSmall
-    return remember(index, count, outer, inner) {
-        outer.copy(topStart = if (index == 0) outer.topStart else inner.topStart,
-            topEnd = if (index == 0) outer.topEnd else inner.topEnd,
-            bottomStart = if (index == count - 1) outer.bottomStart else inner.bottomStart,
-            bottomEnd = if (index == count - 1) outer.bottomEnd else inner.bottomEnd)
-    }
+private fun moduleSettingShapes(index: Int, count: Int): ListItemShapes {
+    val shapes = ListItemDefaults.segmentedShapes(index = index, count = count)
+    return remember(shapes) { shapes.copy(selectedShape = shapes.shape) }
 }
 
 @Composable
 private fun ModuleDiagnosticPanel(title: Int, diagnostic: ModuleDiagnosticUi?, index: Int, count: Int) {
-    Surface(shape = moduleGroupShape(index, count), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    Surface(shape = ListItemDefaults.segmentedShapes(index = index, count = count).shape, color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth().padding(SettingsDimensions.RowHorizontalPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(title), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(stringResource(diagnostic?.status ?: R.string.modules_not_checked), style = MaterialTheme.typography.titleMediumEmphasized,
@@ -228,15 +217,15 @@ private fun ModuleField(field: ModuleFieldUi, index: Int, count: Int, model: Mod
     if (field.type == ModuleSettingType.BOOLEAN) {
         SegmentedListItem(checked = field.checked,
             onCheckedChange = remember(change) { { change(it.toString()) } },
-            shapes = ListItemDefaults.segmentedShapes(index = index, count = count),
-            modifier = Modifier.fillMaxWidth(), enabled = model.busy == null,
+            shapes = moduleSettingShapes(index = index, count = count),
+            modifier = Modifier.fillMaxWidth().semantics { role = Role.Switch }, enabled = model.busy == null,
             colors = ListItemDefaults.segmentedColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
             trailingContent = { Switch(field.checked, onCheckedChange = null, enabled = model.busy == null) },
             supportingContent = { ModuleFieldSupportingText(field) },
         ) { Text(field.label, style = MaterialTheme.typography.bodyLargeEmphasized) }
         return
     }
-    Surface(shape = moduleGroupShape(index, count), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    Surface(shape = ListItemDefaults.segmentedShapes(index = index, count = count).shape, color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth().padding(SettingsDimensions.RowHorizontalPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             when (field.type) {
                 ModuleSettingType.SELECT -> {

@@ -43,14 +43,14 @@ enum class ModuleSettingsDialog { ADD, MODULE_URL, CATALOG_URL, REVIEW, REMOVE_M
 
 @Immutable
 data class ModuleRowUi(val id: String, val name: String, val subtitle: String, val enabled: Boolean,
-    val position: Int, @param:StringRes val status: Int, val canUpdate: Boolean, val playbackStatus: Boolean)
+    val position: Int, @param:StringRes val status: Int, val canUpdate: Boolean, val playbackStatus: Boolean, val qualityTags: ImmutableList<Int>)
 
 @Immutable
 data class ModuleCatalogRowUi(val id: String, val name: String, val origin: String, val refreshed: String, val count: Int)
 
 @Immutable
 data class ModuleCatalogEntryUi(val key: String, val name: String, val subtitle: String, val description: String,
-    val supported: Boolean, val installed: Boolean, val capabilities: ImmutableList<Int>, val download: String?, val expanded: Boolean)
+    val supported: Boolean, val installed: Boolean, val capabilities: ImmutableList<Int>, val download: String?, val expanded: Boolean, val qualityTags: ImmutableList<Int>)
 
 @Immutable
 data class ModuleOperationFailureUi(@param:StringRes val stage: Int, val code: String)
@@ -337,7 +337,8 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
             ModuleRowUi(module.id, module.manifest.name,
                 listOf(module.manifest.author, module.manifest.version).filter(String::isNotBlank).joinToString(" \u00b7 "),
                 module.enabled, index + 1, if (busy == module.id) R.string.modules_checking else statusResource((result.playback ?: result.check)?.status),
-                module.updateUrl.isNotBlank(), busy != module.id && result.playback != null)
+                module.updateUrl.isNotBlank(), busy != module.id && result.playback != null,
+                qualityTags(module.manifest.labels, module.manifest.settings))
         }
         val catalogs = registry.catalogs.map { ModuleCatalogRowUi(it.id, it.name, safeOrigin(it.url), date(it.refreshedAtMs), it.entries.size) }
         val selected = modules.firstOrNull { it.id == selectedId }
@@ -360,9 +361,12 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
         }
         val catalog = registry.catalogs.firstOrNull { it.id == selectedId }?.let { item ->
             ModuleCatalogDetailUi(catalogs.first { it.id == item.id }, ImmutableList.copyOf(item.entries.map { entry ->
-                ModuleCatalogEntryUi(entry.downloadUrl ?: entry.id, entry.name, listOf(entry.author, entry.version).filter(String::isNotBlank).joinToString(" · "),
-                    entry.description, entry.supported && entry.downloadUrl !in unsupportedDownloads, registry.modules.any { it.origin == entry.downloadUrl || it.updateUrl == entry.downloadUrl },
-                    capabilities(entry.capabilities), entry.downloadUrl, (entry.downloadUrl ?: entry.id) in expandedEntries)
+                val installed = registry.modules.firstOrNull { it.origin == entry.downloadUrl || it.updateUrl == entry.downloadUrl }
+                val supported = entry.supported && entry.downloadUrl !in unsupportedDownloads
+                ModuleCatalogEntryUi(entry.downloadUrl ?: entry.id, entry.name, listOf(entry.author, entry.version).filter(String::isNotBlank).joinToString(" \u00b7 "),
+                    entry.description, supported, installed != null,
+                    capabilities(entry.capabilities), entry.downloadUrl, (entry.downloadUrl ?: entry.id) in expandedEntries,
+                    if (supported) qualityTags(entry.labels + installed?.manifest?.labels.orEmpty(), installed?.manifest?.settings.orEmpty()) else ImmutableList.of())
             }.sortedByDescending { it.installed }))
         }
         val review = when (val value = pending) {
@@ -381,6 +385,14 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
             tab, page, module, catalog, dialog, url, review, busy, message, messageIsError, menu, operationFailure)
         mutableState.value = if (modules.isEmpty() && registry.catalogs.isEmpty() && page == ModuleSettingsPage.HOME) ModuleSettingsState.Empty(model) else ModuleSettingsState.Success(model)
     }
+
+    private fun qualityTags(labels: List<String>, settings: List<ModuleSetting>): ImmutableList<Int> =
+        ImmutableList.copyOf(useCases.qualityTags(labels, settings).map { tag ->
+            when (tag) {
+                ModuleQualityTag.HI_RES -> R.string.modules_quality_hi_res
+                ModuleQualityTag.MAX -> R.string.modules_quality_max
+            }
+        })
 
     private fun currentHealth(module: InstalledModule): ModuleHealth {
         val result = health[module.id]

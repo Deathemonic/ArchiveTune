@@ -125,4 +125,7 @@
     <string name="modules_variant">Selected quality: %1$s</string>
     <string name="modules_playback">Playback</string>
     <string name="modules_unsaved_changes">Unsaved changes</string>
+    <string name="modules_quality_hi_res">Hi-Res</string>
+    <string name="modules_quality_max">Max quality</string>
+    <string name="modules_priority_description">Higher providers are tried first.</string>
 </resources>

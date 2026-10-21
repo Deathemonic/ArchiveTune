@@ -297,7 +297,8 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
     private suspend fun manifest(runtime: QuickJs): ModuleManifest {
         val manifest = runtime.evaluate<String>(
             "JSON.stringify((()=>{const p=globalThis.__provider;if(!p||typeof p!=='object')return {};" +
-                "return {id:p.id,name:p.name,version:p.version,author:p.author,description:p.description,labels:p.labels," +
+                "return {id:p.id,name:p.name,version:p.version,author:p.author,description:p.description," +
+                "labels:[...(Array.isArray(p.labels)?p.labels:[]),...(Array.isArray(p.tags)?p.tags:[])]," +
                 "settings:p.settings||{},capabilities:['searchTracks','getTrackStreamUrl','getAlbum','getArtist','getPlaylist'].filter(k=>typeof p[k]==='function')};})());",
         )
         return ModuleManifest.parse(JSONObject(manifest))

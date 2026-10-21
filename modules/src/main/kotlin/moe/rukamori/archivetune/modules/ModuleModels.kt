@@ -12,7 +12,9 @@ import org.json.JSONObject
 
 enum class ModuleFailure { INVALID_DOCUMENT, UNSUPPORTED, INVALID_CONFIGURATION, NETWORK, TIMEOUT, EXECUTION, INTEGRITY }
 
-class ModuleException(val failure: ModuleFailure, cause: Throwable? = null) : Exception(failure.name, cause)
+enum class ModuleLoadStage { DOWNLOAD, DECODE, ENGINE, HOST, PROVIDER, MANIFEST, STORAGE }
+
+class ModuleException(val failure: ModuleFailure, cause: Throwable? = null, val stage: ModuleLoadStage? = null) : Exception(failure.name, cause)
 
 enum class ModuleSettingType { TEXT, PASSWORD, NUMBER, BOOLEAN, SELECT, UNSUPPORTED }
 

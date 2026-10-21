@@ -40,7 +40,6 @@
     <string name="modules_update_versions">Installed: %1$s · Proposed: %2$s</string>
     <string name="modules_configuration_changed">The configuration schema has changed. Compatible values will be retained.</string>
     <string name="modules_required_settings">Required settings: %1$s</string>
-    <string name="modules_setting_value">%1$s: %2$s</string>
     <string name="modules_move_up">Move up</string>
     <string name="modules_move_down">Move down</string>
     <string name="modules_move">Move %1$s</string>
@@ -124,4 +123,6 @@
     <string name="modules_match_explicit">The closest result has conflicting explicit-content metadata.</string>
     <string name="modules_upstream">Upstream: %1$s</string>
     <string name="modules_variant">Selected quality: %1$s</string>
+    <string name="modules_playback">Playback</string>
+    <string name="modules_unsaved_changes">Unsaved changes</string>
 </resources>

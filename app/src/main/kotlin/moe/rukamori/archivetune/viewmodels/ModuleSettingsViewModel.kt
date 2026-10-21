@@ -39,7 +39,7 @@ sealed interface ModuleSettingsState {
 }
 
 enum class ModuleSettingsPage { HOME, MODULE, CATALOG }
-enum class ModuleSettingsDialog { ADD, MODULE_URL, CATALOG_URL, REVIEW, REMOVE_MODULE, REMOVE_CATALOG, DISCARD }
+enum class ModuleSettingsDialog { ADD, MODULE_URL, CATALOG_URL, REVIEW, REMOVE_MODULE, REMOVE_CATALOG, DISCARD, DIAGNOSTICS }
 
 @Immutable
 data class ModuleRowUi(val id: String, val name: String, val subtitle: String, val enabled: Boolean,
@@ -50,7 +50,10 @@ data class ModuleCatalogRowUi(val id: String, val name: String, val origin: Stri
 
 @Immutable
 data class ModuleCatalogEntryUi(val key: String, val name: String, val subtitle: String, val description: String,
-    val supported: Boolean, val installed: Boolean, val capabilities: ImmutableList<Int>, val download: String?)
+    val supported: Boolean, val installed: Boolean, val capabilities: ImmutableList<Int>, val download: String?, val expanded: Boolean)
+
+@Immutable
+data class ModuleOperationFailureUi(@param:StringRes val stage: Int, val code: String)
 
 @Immutable
 data class ModuleOptionUi(val label: String, val json: String)
@@ -77,7 +80,7 @@ data class ModuleReviewUi(val name: String, val version: String, val currentVers
 data class ModuleSettingsUiModel(val enabled: Boolean, val rows: ImmutableList<ModuleRowUi>, val catalogs: ImmutableList<ModuleCatalogRowUi>,
     val enabledCount: Int, val tab: Int, val page: ModuleSettingsPage, val module: ModuleDetailUi?, val catalog: ModuleCatalogDetailUi?,
     val dialog: ModuleSettingsDialog?, val url: String, val review: ModuleReviewUi?, val busy: String?,
-    @param:StringRes val message: Int?, val messageIsError: Boolean, val menu: String?)
+    @param:StringRes val message: Int?, val messageIsError: Boolean, val menu: String?, val failure: ModuleOperationFailureUi?)
 
 sealed interface ModuleSettingsAction {
     data object Retry : ModuleSettingsAction
@@ -103,6 +106,8 @@ sealed interface ModuleSettingsAction {
     data class Update(val id: String? = null) : ModuleSettingsAction
     data class Refresh(val id: String) : ModuleSettingsAction
     data class Install(val url: String) : ModuleSettingsAction
+    data class ToggleEntry(val key: String) : ModuleSettingsAction
+    data object FailureDetails : ModuleSettingsAction
     data class Field(val key: String, val value: String) : ModuleSettingsAction
     data class Reveal(val key: String) : ModuleSettingsAction
     data object Save : ModuleSettingsAction
@@ -143,6 +148,8 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
     private var menu: String? = null
     private val updateQueue = ArrayDeque<ModuleImport.Provider>()
     private var unsupportedDownloads = emptySet<String>()
+    private var expandedEntries = emptySet<String>()
+    private var operationFailure: ModuleOperationFailureUi? = null
 
     init { observe() }
 
@@ -169,7 +176,12 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
                 selectedId = action.id; page = ModuleSettingsPage.MODULE
                 draft = registry.modules.first { it.id == action.id }.configuration.toMap(); revealed = emptySet(); render()
             }
-            is ModuleSettingsAction.OpenCatalog -> { selectedId = action.id; page = ModuleSettingsPage.CATALOG; render() }
+            is ModuleSettingsAction.OpenCatalog -> { selectedId = action.id; page = ModuleSettingsPage.CATALOG; expandedEntries = emptySet(); render() }
+            is ModuleSettingsAction.ToggleEntry -> {
+                expandedEntries = if (action.key in expandedEntries) expandedEntries - action.key else expandedEntries + action.key
+                render()
+            }
+            ModuleSettingsAction.FailureDetails -> { dialog = ModuleSettingsDialog.DIAGNOSTICS; render() }
             is ModuleSettingsAction.Drag -> {
                 if (busy == null) {
                     val ids = (draftOrder ?: registry.modules.map { it.id }).toMutableList()
@@ -196,7 +208,7 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
                 draft = draft + (action.key to value); render()
             }
             is ModuleSettingsAction.Reveal -> { revealed = if (action.key in revealed) revealed - action.key else revealed + action.key; render() }
-            ModuleSettingsAction.ClearMessage -> { message = null; render() }
+            ModuleSettingsAction.ClearMessage -> { message = null; operationFailure = null; render() }
             is ModuleSettingsAction.Menu -> { menu = action.id; render() }
             ModuleSettingsAction.CopyDiagnostics -> copyDiagnostics()
             else -> mutate(action)
@@ -223,9 +235,11 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
             is ModuleSettingsAction.Check -> action.id ?: "all"
             is ModuleSettingsAction.Update -> action.id ?: "all"
             is ModuleSettingsAction.Refresh -> action.id
+            is ModuleSettingsAction.Install -> action.url
             else -> "all"
         }
         message = null
+        operationFailure = null
         val refreshDraft = action == ModuleSettingsAction.Save || (action == ModuleSettingsAction.Confirm && dialog == ModuleSettingsDialog.REVIEW)
         render()
         operation = viewModelScope.launch {
@@ -278,8 +292,19 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
                 messageIsError = false
             } catch (error: CancellationException) { throw error }
             catch (error: Exception) {
-                if (action is ModuleSettingsAction.Install && (error as? ModuleException)?.failure == ModuleFailure.UNSUPPORTED) unsupportedDownloads += action.url
-                message = if (action == ModuleSettingsAction.CommitOrder) R.string.modules_order_failed else failureResource(error)
+                val chain = generateSequence<Throwable>(error) { it.cause }.take(8).toList()
+                val moduleError = chain.filterIsInstance<ModuleException>().firstOrNull()
+                if (action is ModuleSettingsAction.Install && moduleError?.failure == ModuleFailure.UNSUPPORTED) unsupportedDownloads += action.url
+                val stage = moduleError?.stage ?: when (action) {
+                    is ModuleSettingsAction.Install, ModuleSettingsAction.SubmitUrl, is ModuleSettingsAction.Update -> ModuleLoadStage.DOWNLOAD
+                    is ModuleSettingsAction.FileSelected -> ModuleLoadStage.DECODE
+                    else -> ModuleLoadStage.STORAGE
+                }
+                val type = chain.last().javaClass.simpleName.replace(Regex("[^A-Za-z0-9_$]"), "").take(80)
+                val code = "stage=${stage.name}; failure=${moduleError?.failure?.name ?: "UNEXPECTED"}; exception=$type"
+                operationFailure = ModuleOperationFailureUi(stageResource(stage), code)
+                timber.log.Timber.tag("Modules").w("Operation failed: %s", code)
+                message = if (action == ModuleSettingsAction.CommitOrder) R.string.modules_order_failed else failureResource(moduleError ?: error)
                 messageIsError = true
             }
             finally { draftOrder = null; busy = null; render() }
@@ -327,7 +352,7 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
             ModuleCatalogDetailUi(catalogs.first { it.id == item.id }, ImmutableList.copyOf(item.entries.map { entry ->
                 ModuleCatalogEntryUi(entry.downloadUrl ?: entry.id, entry.name, listOf(entry.author, entry.version).filter(String::isNotBlank).joinToString(" · "),
                     entry.description, entry.supported && entry.downloadUrl !in unsupportedDownloads, registry.modules.any { it.origin == entry.downloadUrl || it.updateUrl == entry.downloadUrl },
-                    capabilities(entry.capabilities), entry.downloadUrl)
+                    capabilities(entry.capabilities), entry.downloadUrl, (entry.downloadUrl ?: entry.id) in expandedEntries)
             }))
         }
         val review = when (val value = pending) {
@@ -343,22 +368,32 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
             null -> null
         }
         val model = ModuleSettingsUiModel(registry.enabled, ImmutableList.copyOf(rows), ImmutableList.copyOf(catalogs), modules.count { it.enabled },
-            tab, page, module, catalog, dialog, url, review, busy, message, messageIsError, menu)
+            tab, page, module, catalog, dialog, url, review, busy, message, messageIsError, menu, operationFailure)
         mutableState.value = if (modules.isEmpty() && registry.catalogs.isEmpty() && page == ModuleSettingsPage.HOME) ModuleSettingsState.Empty(model) else ModuleSettingsState.Success(model)
     }
 
     private fun copyDiagnostics() {
         val entries = registry.modules.filter { selectedId == null || it.id == selectedId }
-        val text = entries.joinToString("\n") { module ->
+        val report = entries.joinToString("\n") { module ->
             val check = health[module.id]
             "${module.manifest.id} ${module.manifest.version}: ${check?.status?.name ?: "NOT_CHECKED"}; elapsedMs=${check?.elapsedMs ?: 0}; failure=${check?.failure?.name.orEmpty()}"
         }
+        val text = listOfNotNull(operationFailure?.code, report.takeIf(String::isNotBlank)).joinToString("\n")
         eventChannel.trySend(ModuleSettingsEvent.Copy(text))
     }
 
     private fun date(millis: Long): String = if (millis > 0) DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(millis)) else ""
 
     companion object {
+        private fun stageResource(stage: ModuleLoadStage): Int = when (stage) {
+            ModuleLoadStage.DOWNLOAD -> R.string.modules_stage_download
+            ModuleLoadStage.DECODE -> R.string.modules_stage_decode
+            ModuleLoadStage.ENGINE -> R.string.modules_stage_engine
+            ModuleLoadStage.HOST -> R.string.modules_stage_host
+            ModuleLoadStage.PROVIDER -> R.string.modules_stage_provider
+            ModuleLoadStage.MANIFEST -> R.string.modules_stage_manifest
+            ModuleLoadStage.STORAGE -> R.string.modules_stage_storage
+        }
         private fun safeOrigin(url: String): String = Uri.parse(url).host.orEmpty()
         private fun capabilities(values: List<String>): ImmutableList<Int> = ImmutableList.copyOf(values.mapNotNull {
             when (it) {

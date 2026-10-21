@@ -184,6 +184,7 @@ import coil3.request.allowHardware
 import coil3.toBitmap
 import com.valentinilk.shimmer.LocalShimmerTheme
 import dagger.hilt.android.AndroidEntryPoint
+import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.CancellationException
@@ -270,6 +271,7 @@ import moe.rukamori.archivetune.playback.queues.LocalAlbumRadio
 import moe.rukamori.archivetune.playback.queues.Queue
 import moe.rukamori.archivetune.playback.queues.YouTubeAlbumRadio
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
+import moe.rukamori.archivetune.ui.component.BlurredOverflowMenu
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
 import moe.rukamori.archivetune.ui.component.COLLAPSED_ANCHOR
@@ -281,6 +283,7 @@ import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.component.MarkdownText
 import moe.rukamori.archivetune.ui.component.NetworkStatusBanner
+import moe.rukamori.archivetune.ui.component.OverflowMenuDivider
 import moe.rukamori.archivetune.ui.component.StarDialog
 import moe.rukamori.archivetune.ui.component.TopAppBarOverflowMenu
 import moe.rukamori.archivetune.ui.component.TopSearch
@@ -2397,6 +2400,7 @@ class MainActivity : ComponentActivity() {
                                                 HomeOverflowFab(
                                                     expanded = homeOverflowMenuExpanded,
                                                     pureBlack = pureBlack,
+                                                    hazeState = menuHazeState,
                                                     onExpandedChange = { homeOverflowMenuExpanded = it },
                                                     onShuffleClick = {
                                                         val useLocalSource =
@@ -3202,6 +3206,7 @@ private fun HomeOverflowFabVisibility(
 private fun HomeOverflowFab(
     expanded: Boolean,
     pureBlack: Boolean,
+    hazeState: HazeState,
     onExpandedChange: (Boolean) -> Unit,
     onShuffleClick: () -> Unit,
     onMusicRecognitionClick: () -> Unit,
@@ -3231,14 +3236,14 @@ private fun HomeOverflowFab(
             )
         }
 
-        DropdownMenu(
+        BlurredOverflowMenu(
             expanded = expanded,
+            hazeState = hazeState,
+            pureBlack = pureBlack,
             onDismissRequest = { onExpandedChange(false) },
-            shape = RoundedCornerShape(24.dp),
-            containerColor = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 6.dp,
         ) {
             DropdownMenuItem(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 text = { Text(stringResource(R.string.music_recognition)) },
                 onClick = {
                     onExpandedChange(false)
@@ -3253,7 +3258,9 @@ private fun HomeOverflowFab(
                 },
                 colors = menuItemColors,
             )
+            OverflowMenuDivider()
             DropdownMenuItem(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 text = { Text(stringResource(R.string.music_together)) },
                 onClick = {
                     onExpandedChange(false)
@@ -3268,7 +3275,9 @@ private fun HomeOverflowFab(
                 },
                 colors = menuItemColors,
             )
+            OverflowMenuDivider()
             DropdownMenuItem(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 text = { Text(stringResource(R.string.shuffle)) },
                 onClick = {
                     onExpandedChange(false)

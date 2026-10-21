@@ -28,13 +28,18 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
     private val applicationContext = context.applicationContext
     private val lock = Mutex()
     private val engines = LinkedHashMap<String, Engine>(8, 0.75f, true)
-    private data class Engine(val source: String, val runtime: QuickJs)
+    private data class Engine(val source: String, val runtime: QuickJs, val manifest: ModuleManifest)
 
     suspend fun inspect(source: String, origin: String): ModuleManifest =
         withTimeoutOrNull(5_000) {
-            lock.withLock {
-                val runtime = create(source, origin)
-                try { manifest(runtime) } finally { runtime.close() }
+            withContext(Dispatchers.Default) {
+                lock.withLock {
+                    val engine = create(source, origin)
+                    try { engine.manifest } finally {
+                        try { engine.runtime.close() }
+                        catch (error: Exception) { throw ModuleException(ModuleFailure.EXECUTION, error, ModuleLoadStage.ENGINE) }
+                    }
+                }
             }
         } ?: throw ModuleException(ModuleFailure.TIMEOUT)
 
@@ -97,13 +102,12 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
         lock.withLock { engines.keys.filter { it == id || it.startsWith("$id:") }.forEach { engines.remove(it)?.runtime?.close() } }
     }
 
-    private suspend fun call(id: String, source: String, origin: String, function: String, args: JSONArray): Any =
+    private suspend fun call(id: String, source: String, origin: String, function: String, args: JSONArray): Any = withContext(Dispatchers.Default) {
         lock.withLock {
             var engine = engines[id]
             if (engine?.source != source) {
                 engines.remove(id)?.runtime?.close()
-                val runtime = create(source, origin)
-                engine = Engine(source, runtime)
+                engine = create(source, origin)
                 engines[id] = engine
                 while (engines.size > 2) engines.remove(engines.keys.first())?.runtime?.close()
             }
@@ -118,30 +122,34 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
                 )
                 if (result.length > ModuleHttpClient.MAX_BODY_BYTES) throw ModuleException(ModuleFailure.EXECUTION)
                 org.json.JSONTokener(result).nextValue()
-            } catch (error: CancellationException) {
-                engines.remove(id)?.runtime?.close()
-                throw error
-            } catch (error: QuickJsInterruptedException) {
-                engines.remove(id)?.runtime?.close()
-                throw ModuleException(ModuleFailure.TIMEOUT, error)
-            } catch (error: Exception) {
-                engines.remove(id)?.runtime?.close()
-                throw ModuleException(ModuleFailure.EXECUTION, error)
+            } catch (error: Throwable) {
+                closeAfterFailure(engines.remove(id)?.runtime, error)
+                when (error) {
+                    is CancellationException -> throw error
+                    is ModuleException -> throw error
+                    is QuickJsInterruptedException -> throw ModuleException(ModuleFailure.TIMEOUT, error, ModuleLoadStage.PROVIDER)
+                    is Exception, is LinkageError -> throw ModuleException(ModuleFailure.EXECUTION, error, ModuleLoadStage.PROVIDER)
+                    else -> throw error
+                }
             }
         }
+    }
 
-    private suspend fun create(source: String, origin: String): QuickJs = withContext(Dispatchers.Default) {
-        val code = ModuleSourceDecoder.decode(source).replaceFirst(Regex("^export\\s+default\\s+"), "return ")
-        val runtime = QuickJs.create(Dispatchers.Default)
-        var initialized = false
+    private suspend fun create(source: String, origin: String): Engine {
+        var stage = ModuleLoadStage.DECODE
+        var runtime: QuickJs? = null
         try {
-            runtime.memoryLimit = 32L * 1024 * 1024
-            runtime.maxStackSize = 1024L * 1024
-            runtime.evaluationTimeoutMillis = 15_000
+            val code = ModuleSourceDecoder.decode(source).replaceFirst(Regex("^export\\s+default\\s+"), "return ")
+            stage = ModuleLoadStage.ENGINE
+            val engine = QuickJs.create(Dispatchers.Default)
+            runtime = engine
+            engine.memoryLimit = 32L * 1024 * 1024
+            engine.maxStackSize = 1024L * 1024
+            engine.evaluationTimeoutMillis = 15_000
             val namespace = java.util.UUID.randomUUID().toString()
-            runtime.asyncFunction<String, String>("__moduleFetch") { json -> http.fetch(json, origin, namespace) }
+            engine.asyncFunction<String, String>("__moduleFetch") { json -> http.fetch(json, origin, namespace) }
             val timers = java.util.concurrent.ConcurrentHashMap<String, CompletableDeferred<Unit>>()
-            runtime.asyncFunction<String, Unit>("__moduleDelay") { json ->
+            engine.asyncFunction<String, Unit>("__moduleDelay") { json ->
                 val value = JSONObject(json)
                 val id = value.getString("id")
                 val signal = CompletableDeferred<Unit>()
@@ -149,9 +157,9 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
                 try { withTimeoutOrNull(value.optLong("millis").coerceIn(0, 15_000)) { signal.await() }; Unit }
                 finally { timers.remove(id, signal) }
             }
-            runtime.function("__moduleClearTimer") { args -> args.firstOrNull()?.toString()?.let { timers.remove(it)?.complete(Unit) }; Unit }
-            runtime.function("__moduleAbort") { args -> args.firstOrNull()?.toString()?.let { http.abort("$namespace:$it") }; Unit }
-            runtime.function("__moduleUrl") { args ->
+            engine.function("__moduleClearTimer") { args -> args.firstOrNull()?.toString()?.let { timers.remove(it)?.complete(Unit) }; Unit }
+            engine.function("__moduleAbort") { args -> args.firstOrNull()?.toString()?.let { http.abort("$namespace:$it") }; Unit }
+            engine.function("__moduleUrl") { args ->
                 val input = args.firstOrNull()?.toString().orEmpty()
                 val base = args.getOrNull(1)?.toString()?.takeUnless { it == "undefined" } ?: origin
                 val uri = URI(ModuleHttpClient.resolveUrl(input, base))
@@ -160,23 +168,34 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
                     .put("pathname", uri.rawPath.orEmpty().ifBlank { "/" }).put("search", uri.rawQuery?.let { "?$it" }.orEmpty())
                     .put("hash", uri.rawFragment?.let { "#$it" }.orEmpty()).put("origin", "${uri.scheme}://${uri.rawAuthority}").toString()
             }
+            stage = ModuleLoadStage.HOST
             val host = withContext(Dispatchers.IO) {
                 applicationContext.assets.open("module-host.js").bufferedReader().use { it.readText() }
             }
-            runtime.evaluate<Unit>(host + "\nvoid 0;", filename = "module-host.js")
-            runtime.evaluate<Unit>(
+            engine.evaluate<String>(host + "\n;\"module-host-ready\";", filename = "module-host.js")
+            stage = ModuleLoadStage.PROVIDER
+            engine.evaluate<String>(
                 "globalThis.__provider=(function(){const module={exports:{}};const exports=module.exports;" +
-                    code + "\n;return module.exports;})();\nvoid 0;",
+                    code + "\n;return module.exports;})();\n\"module-provider-ready\";",
                 filename = "module-provider.js",
             )
-            manifest(runtime)
-            initialized = true
-            runtime
-        } catch (error: CancellationException) { throw error }
-        catch (error: ModuleException) { throw error }
-        catch (error: QuickJsInterruptedException) { throw ModuleException(ModuleFailure.TIMEOUT, error) }
-        catch (error: Exception) { throw ModuleException(ModuleFailure.EXECUTION, error) }
-        finally { if (!initialized) runtime.close() }
+            stage = ModuleLoadStage.MANIFEST
+            return Engine(source, engine, manifest(engine))
+        } catch (error: Throwable) {
+            closeAfterFailure(runtime, error)
+            when (error) {
+                is CancellationException -> throw error
+                is ModuleException -> throw ModuleException(error.failure, error, error.stage ?: stage)
+                is QuickJsInterruptedException -> throw ModuleException(ModuleFailure.TIMEOUT, error, stage)
+                is Exception, is LinkageError -> throw ModuleException(ModuleFailure.EXECUTION, error, stage)
+                else -> throw error
+            }
+        }
+    }
+
+    private fun closeAfterFailure(runtime: QuickJs?, error: Throwable) {
+        try { runtime?.close() }
+        catch (closing: Throwable) { if (closing !== error) error.addSuppressed(closing) }
     }
 
     private suspend fun manifest(runtime: QuickJs): ModuleManifest {

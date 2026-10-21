@@ -562,7 +562,7 @@
     <string name="audio_quality_high">High</string>
     <string name="audio_quality_low">Low</string>
     <string name="low_data_mode_title">Low Data Mode</string>
-    <string name="low_data_mode_description">Reduces mobile data usage by using low-quality streams and disabling playback cache and canvas on metered networks</string>
+    <string name="low_data_mode_description">Uses lower-quality YouTube streams and disables playback cache and canvas on metered networks. Module audio quality stays unchanged.</string>
     <string name="preload_next_song_title">Preload Mode</string>
     <string name="preload_next_song_warning">Uses additional data, battery, and processing in the background.</string>
     <string name="sponsor_block_group">Sponsor Block</string>

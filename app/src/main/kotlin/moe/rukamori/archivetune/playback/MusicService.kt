@@ -218,6 +218,11 @@ import moe.rukamori.archivetune.innertube.models.response.PlayerResponse
 import moe.rukamori.archivetune.lastfm.LastFM
 import moe.rukamori.archivetune.lyrics.LyricsHelper
 import moe.rukamori.archivetune.models.MediaMetadata
+import moe.rukamori.archivetune.modules.ModuleAudioSelection
+import moe.rukamori.archivetune.modules.ModuleDownloadRepository
+import moe.rukamori.archivetune.modules.ModuleMediaStorage
+import moe.rukamori.archivetune.modules.ResolveModuleAudioUseCase
+import moe.rukamori.archivetune.modules.moduleMatchMetadata
 import moe.rukamori.archivetune.models.PersistPlayerState
 import moe.rukamori.archivetune.models.PersistQueue
 import moe.rukamori.archivetune.models.toMediaMetadata
@@ -314,6 +319,20 @@ class MusicService :
 
     @Inject
     lateinit var resolveAudioStream: ResolveAudioStreamUseCase
+
+    @Inject
+    lateinit var moduleAudio: ResolveModuleAudioUseCase
+
+    @Inject
+    lateinit var moduleBindings: ModuleDownloadRepository
+
+    @Inject
+    lateinit var moduleStorage: ModuleMediaStorage
+
+    @Inject
+    lateinit var moduleDownloadUtil: DownloadUtil
+
+    private val activeModuleAudio = ConcurrentHashMap<String, ModuleAudioSelection>()
 
     @Inject
     lateinit var observePlaybackPreloadConfiguration: ObservePlaybackPreloadConfigurationUseCase
@@ -6678,6 +6697,7 @@ class MusicService :
         }
 
     private suspend fun registerRemotePlaybackHistory(mediaId: String): Boolean {
+        if (activeModuleAudio.containsKey(mediaId)) return false
         if (database
                 .song(mediaId)
                 .first()
@@ -7028,6 +7048,7 @@ class MusicService :
                     purpose = StreamPurpose.PLAYBACK,
                     authState = configuration.authState,
                     pinnedFormatId = null,
+                    moduleMetadata = nextMediaItem.metadata?.moduleMatchMetadata(),
                 ),
         )
     }
@@ -7386,6 +7407,10 @@ class MusicService :
         recoverySnapshot: PlaybackRecoverySnapshot,
     ) {
         val currentMediaId = recoverySnapshot.mediaId
+        if (activeModuleAudio.containsKey(currentMediaId)) {
+            if (dataStore.get(AutoSkipNextOnErrorKey, false)) skipOnError() else stopOnError()
+            return
+        }
         val isLocalMedia = currentMediaId.isLocalMediaId() ||
             player.currentMediaItem?.localConfiguration?.uri?.shouldBypassPlayerCache() == true
         val (isFullyDownloadedMedia, hasAnyCachedData) = withContext(Dispatchers.IO) {
@@ -7642,6 +7667,7 @@ class MusicService :
                 networkMetered = lowDataModeActive,
                 purpose = StreamPurpose.PLAYBACK,
                 authState = YouTube.currentPlaybackAuthState(),
+                allowModules = false,
             )
         val resolved =
             if (blocking) {
@@ -7697,6 +7723,7 @@ class MusicService :
                             purpose = StreamPurpose.PLAYBACK,
                             authState = YouTube.currentPlaybackAuthState(),
                             pinnedFormatId = pinnedFormatId,
+                            allowModules = false,
                         ),
                     ).also { resolved ->
                         resolvedRequestHeaders = resolved.requestHeaders
@@ -7889,11 +7916,34 @@ class MusicService :
             }
         }.getOrDefault(false)
 
-    private fun createMediaSourceFactory() =
-        DefaultMediaSourceFactory(
-            createDataSourceFactory(),
-            DefaultExtractorsFactory(),
+    private fun createMediaSourceFactory(): androidx.media3.exoplayer.source.MediaSource.Factory =
+        ModuleMediaSourceFactory(
+            delegate = DefaultMediaSourceFactory(createDataSourceFactory(), DefaultExtractorsFactory()),
+            resolver = moduleAudio,
+            bindings = moduleBindings,
+            storage = moduleStorage,
+            completedDownload = { id ->
+                moduleDownloadUtil.downloadManager.downloadIndex.getDownload(id)?.state == androidx.media3.exoplayer.offline.Download.STATE_COMPLETED
+            },
+            selected = ::onModuleAudioSelected,
         )
+
+    private fun onModuleAudioSelected(mediaId: String, selection: ModuleAudioSelection?) {
+        if (selection == null) {
+            activeModuleAudio.remove(mediaId)
+        } else {
+            activeModuleAudio[mediaId] = selection
+            if (activeModuleAudio.size > 256) {
+                activeModuleAudio.keys.filter { it != mediaId }.take(activeModuleAudio.size - 256).forEach(activeModuleAudio::remove)
+            }
+            remotePlaybackTrackingUrlCache.remove(mediaId)
+            audioNormalizationFactorCache[mediaId] = 1f
+            selection.stream.mimeType.toCastMimeType()?.let { castMimeTypeCache.put(mediaId, it) }
+            scope.launch {
+                if (currentMediaMetadata.value?.id == mediaId) normalizeFactor.value = 1f
+            }
+        }
+    }
 
     private class SchemeRoutingDataSource(
         private val selectFactory: (DataSpec) -> DataSource.Factory,

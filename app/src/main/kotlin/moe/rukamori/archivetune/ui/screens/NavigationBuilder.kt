@@ -441,6 +441,9 @@ fun NavGraphBuilder.navigationBuilder(
     composable("settings/player") {
         PlayerSettings(navController)
     }
+    composable("settings/modules") {
+        moe.rukamori.archivetune.ui.screens.settings.ModulesSettings(navController)
+    }
     composable("settings/canvas") {
         CanvasSettings(navController)
     }

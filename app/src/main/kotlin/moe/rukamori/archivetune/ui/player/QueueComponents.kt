@@ -576,6 +576,7 @@ fun QueueCollapsedContentV2(
 
             val extraText =
                 listOfNotNull(
+                    currentFormat.sourceName,
                     currentFormat.formattedSampleRate(),
                     currentFormat.formattedFileSize().takeIf { it.isNotBlank() },
                 ).joinToString(separator = " • ")

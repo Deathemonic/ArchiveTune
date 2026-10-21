@@ -401,6 +401,8 @@ dependencies {
     implementation(project(":shazamkit"))
     implementation(project(":spotifycore"))
     implementation(project(":morideobfuscator"))
+    implementation(project(":modules"))
+    implementation("androidx.media3:media3-exoplayer-dash:${libs.versions.media3.get()}")
     implementation("com.materialkolor:material-kolor:5.0.1")
 
     implementation(libs.webkit)

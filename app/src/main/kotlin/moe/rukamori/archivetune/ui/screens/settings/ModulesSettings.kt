@@ -270,6 +270,7 @@ private fun ModuleRow(
                 if (row.subtitle.isNotBlank()) Text(row.subtitle, style = MaterialTheme.typography.bodyMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     row.qualityTags.forEach { ModuleBadge(stringResource(it), accent = true) }
+                    row.capabilities.forEach { ModuleBadge(stringResource(it)) }
                     ModuleBadge(stringResource(R.string.modules_position, row.position, model.rows.size), accent = true)
                     ModuleBadge(if (row.playbackStatus) stringResource(R.string.modules_playback_status, stringResource(row.status)) else stringResource(row.status))
                 }
@@ -402,19 +403,17 @@ private fun ModuleCatalogEntry(entry: ModuleCatalogEntryUi, index: Int, count: I
                 if (entry.subtitle.isNotBlank()) Text(entry.subtitle, style = MaterialTheme.typography.bodyMedium)
                 if (entry.description.isNotBlank()) Text(entry.description, style = MaterialTheme.typography.bodyMedium,
                     maxLines = if (entry.expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
-                if (entry.installed || entry.qualityTags.isNotEmpty()) {
+                if (entry.installed || entry.qualityTags.isNotEmpty() || entry.capabilities.isNotEmpty()) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (entry.installed) ModuleBadge(stringResource(R.string.modules_already_installed), accent = true)
                         entry.qualityTags.forEach { ModuleBadge(stringResource(it), accent = true) }
+                        entry.capabilities.forEach { ModuleBadge(stringResource(it)) }
                     }
                 }
                 if (!entry.supported) Text(stringResource(R.string.modules_unsupported_description),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                if (entry.expanded) {
-                    if (entry.capabilities.isEmpty()) Text(stringResource(R.string.modules_capabilities_pending), style = MaterialTheme.typography.bodySmall)
-                    else FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        entry.capabilities.forEach { ModuleBadge(stringResource(it)) }
-                    }
+                if (entry.expanded && entry.capabilities.isEmpty()) {
+                    Text(stringResource(R.string.modules_capabilities_pending), style = MaterialTheme.typography.bodySmall)
                 }
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),

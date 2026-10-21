@@ -43,7 +43,8 @@ enum class ModuleSettingsDialog { ADD, MODULE_URL, CATALOG_URL, REVIEW, REMOVE_M
 
 @Immutable
 data class ModuleRowUi(val id: String, val name: String, val subtitle: String, val enabled: Boolean,
-    val position: Int, @param:StringRes val status: Int, val canUpdate: Boolean, val playbackStatus: Boolean, val qualityTags: ImmutableList<Int>)
+    val position: Int, @param:StringRes val status: Int, val canUpdate: Boolean, val playbackStatus: Boolean,
+    val qualityTags: ImmutableList<Int>, val capabilities: ImmutableList<Int>)
 
 @Immutable
 data class ModuleCatalogRowUi(val id: String, val name: String, val origin: String, val refreshed: String, val count: Int)
@@ -338,7 +339,7 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
                 listOf(module.manifest.author, module.manifest.version).filter(String::isNotBlank).joinToString(" \u00b7 "),
                 module.enabled, index + 1, if (busy == module.id) R.string.modules_checking else statusResource((result.playback ?: result.check)?.status),
                 module.updateUrl.isNotBlank(), busy != module.id && result.playback != null,
-                qualityTags(module.manifest.labels, module.manifest.settings))
+                qualityTags(module.manifest.labels, module.manifest.settings), capabilities(module.manifest.capabilities))
         }
         val catalogs = registry.catalogs.map { ModuleCatalogRowUi(it.id, it.name, safeOrigin(it.url), date(it.refreshedAtMs), it.entries.size) }
         val selected = modules.firstOrNull { it.id == selectedId }
@@ -365,7 +366,7 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
                 val supported = entry.supported && entry.downloadUrl !in unsupportedDownloads
                 ModuleCatalogEntryUi(entry.downloadUrl ?: entry.id, entry.name, listOf(entry.author, entry.version).filter(String::isNotBlank).joinToString(" \u00b7 "),
                     entry.description, supported, installed != null,
-                    capabilities(entry.capabilities), entry.downloadUrl, (entry.downloadUrl ?: entry.id) in expandedEntries,
+                    capabilities(installed?.manifest?.capabilities ?: entry.capabilities), entry.downloadUrl, (entry.downloadUrl ?: entry.id) in expandedEntries,
                     if (supported) qualityTags(entry.labels + installed?.manifest?.labels.orEmpty(), installed?.manifest?.settings.orEmpty()) else ImmutableList.of())
             }.sortedByDescending { it.installed }))
         }

@@ -15,6 +15,7 @@ import android.util.AtomicFile
 import android.util.Base64
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -118,11 +119,14 @@ class ModuleRepository @Inject constructor(@ApplicationContext private val conte
         prepare(bytes.toString(Charsets.UTF_8), "", null)
     }
 
-    suspend fun importUrl(url: String, replacementId: String? = null): ModuleImport {
+    suspend fun importUrl(url: String, replacementId: String? = null): ModuleImport = try {
         val (text, origin) = http.document(url.trim())
         val prepared = prepare(text, origin, replacementId)
-        return if (prepared is ModuleImport.Provider) prepared.copy(document = prepared.document.copy(updateUrl = ModuleHttpClient.webUrl(url.trim()))) else prepared
-    }
+        if (prepared is ModuleImport.Provider) prepared.copy(document = prepared.document.copy(updateUrl = ModuleHttpClient.webUrl(url.trim()))) else prepared
+    } catch (error: CancellationException) { throw error }
+    catch (error: ModuleException) { throw error }
+    catch (error: java.io.IOException) { throw ModuleException(ModuleFailure.NETWORK, error, ModuleLoadStage.DOWNLOAD) }
+    catch (error: org.json.JSONException) { throw ModuleException(ModuleFailure.INVALID_DOCUMENT, error, ModuleLoadStage.DECODE) }
 
     suspend fun catalog(url: String, existingId: String? = null, initialText: String? = null): ModuleImport.Catalog {
         val existing = snapshot().catalogs.firstOrNull { it.id == existingId }

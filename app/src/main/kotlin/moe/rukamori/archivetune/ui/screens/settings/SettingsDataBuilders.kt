@@ -63,6 +63,7 @@ fun buildSettingsGroups(
             subtitle = stringResource(R.string.settings_playback_subtitle),
             accentColor = MaterialTheme.colorScheme.tertiary,
             onClick = { navController.navigate("settings/player") },
+        )
     val modules =
         SettingsItem(
             key = "modules",

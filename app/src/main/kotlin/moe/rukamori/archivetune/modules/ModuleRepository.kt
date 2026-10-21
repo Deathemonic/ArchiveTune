@@ -358,12 +358,14 @@ class ModuleRepository @Inject constructor(@ApplicationContext private val conte
 
         fun validValue(field: ModuleSetting, json: String): Boolean = try {
             val value = parseJsonValue(json)
+            val minimum = field.minimum
+            val maximum = field.maximum
             if (value == JSONObject.NULL) !field.required else if (field.required && value.toString().isBlank()) false else when (field.type) {
                 ModuleSettingType.TEXT, ModuleSettingType.PASSWORD -> value is String
                 ModuleSettingType.BOOLEAN -> value is Boolean
                 ModuleSettingType.NUMBER -> value is Number && value.toDouble().isFinite() &&
                     (!field.integerOnly || value.toDouble() % 1.0 == 0.0) &&
-                    (field.minimum == null || value.toDouble() >= field.minimum) && (field.maximum == null || value.toDouble() <= field.maximum)
+                    (minimum == null || value.toDouble() >= minimum) && (maximum == null || value.toDouble() <= maximum)
                 ModuleSettingType.SELECT -> field.options.any { equivalentJsonValue(it.valueJson, json) }
                 ModuleSettingType.UNSUPPORTED -> !field.required
             }

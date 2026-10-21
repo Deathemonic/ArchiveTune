@@ -181,10 +181,12 @@ class ResolveModuleAudioUseCase @Inject constructor(
         if (titleScore != 1.0 && markers.any { Regex("(?:^| )${Regex.escape(it)}(?: |$)").containsMatchIn(targetTitle) }) return null
         val artistScore = target.artists.maxOf { artist -> track.artists.maxOf { FuzzyMatcher.jaroWinkler(artist, it) } }
         if (titleScore < 0.9 || artistScore < 0.9) return null
-        if (target.duration > 0 && track.durationSeconds != null) {
-            if (kotlin.math.abs(target.duration - track.durationSeconds) > maxOf(5.0, target.duration * 0.05)) return null
+        val candidateDuration = track.durationSeconds
+        if (target.duration > 0 && candidateDuration != null) {
+            if (kotlin.math.abs(target.duration - candidateDuration) > maxOf(5.0, target.duration * 0.05)) return null
         } else if (titleScore != 1.0 || artistScore != 1.0) return null
-        val albumScore = if (!target.album.isNullOrBlank() && !track.album.isNullOrBlank()) FuzzyMatcher.jaroWinkler(target.album, track.album) else 0.0
+        val candidateAlbum = track.album
+        val albumScore = if (!target.album.isNullOrBlank() && !candidateAlbum.isNullOrBlank()) FuzzyMatcher.jaroWinkler(target.album, candidateAlbum) else 0.0
         return titleScore * 0.6 + artistScore * 0.35 + albumScore * 0.05
     }
 

@@ -9,10 +9,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import moe.rukamori.archivetune.models.ActiveOutputDevice
-import moe.rukamori.archivetune.models.MediaMetadata
 
 data class AudioSignalData(
-    val metadata: MediaMetadata?,
+    val source: StreamingSourceData,
     val native: NativeUsbAudioState,
     val usb: DirectUsbAudioState,
     val outputDevice: ActiveOutputDevice,
@@ -20,12 +19,13 @@ data class AudioSignalData(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @ViewModelScoped
-class AudioSignalRepository @Inject constructor() {
+class AudioSignalRepository @Inject constructor(private val streamingSources: StreamingSourceRepository) {
     private val connection = MutableStateFlow<PlayerConnection?>(null)
     private var attachments = 0
 
     fun attach(playerConnection: PlayerConnection) {
         attachments = if (connection.value === playerConnection) attachments + 1 else 1
+        streamingSources.attach(playerConnection)
         connection.value = playerConnection
         playerConnection.service.refreshActiveDevice()
     }
@@ -33,6 +33,7 @@ class AudioSignalRepository @Inject constructor() {
     fun detach(playerConnection: PlayerConnection) {
         if (connection.value !== playerConnection) return
         attachments--
+        streamingSources.detach(playerConnection)
 
         if (attachments == 0) connection.value = null
     }
@@ -43,12 +44,12 @@ class AudioSignalRepository @Inject constructor() {
         } else {
             val service = playerConnection.service
             combine(
-                playerConnection.mediaMetadata,
+                streamingSources.observeSource(),
                 service.nativeUsbAudioState,
                 service.directUsbAudioState,
                 service.activeAudioDevice,
-            ) { metadata, native, usb, outputDevice ->
-                AudioSignalData(metadata, native, usb, outputDevice)
+            ) { source, native, usb, outputDevice ->
+                source?.let { AudioSignalData(it, native, usb, outputDevice) }
             }
         }
     }

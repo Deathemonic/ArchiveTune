@@ -75,6 +75,7 @@ import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR
+import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.ContentMetadata
 import androidx.media3.datasource.cache.ContentMetadataMutations
 import androidx.media3.datasource.okhttp.OkHttpDataSource
@@ -88,6 +89,7 @@ import androidx.media3.exoplayer.analytics.PlaybackStatsListener
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.extractor.DefaultExtractorsFactory
@@ -245,6 +247,11 @@ import moe.rukamori.archivetune.playback.stream.ResolveAudioStreamUseCase
 import moe.rukamori.archivetune.playback.stream.ResolvedAudioStream
 import moe.rukamori.archivetune.playback.stream.StreamPurpose
 import moe.rukamori.archivetune.scrobbling.LastFmServiceConfig
+import moe.rukamori.archivetune.sources.SourceMediaSourceFactory
+import moe.rukamori.archivetune.sources.SourcePlaybackSettings
+import moe.rukamori.archivetune.sources.SourceRepository
+import moe.rukamori.archivetune.sources.SourceRequest
+import moe.rukamori.archivetune.sources.createSourceHttpClient
 import moe.rukamori.archivetune.sponsorblock.SponsorBlockPlaybackController
 import moe.rukamori.archivetune.storage.StorageFolderKind
 import moe.rukamori.archivetune.storage.StorageLocationRepository
@@ -332,6 +339,9 @@ class MusicService :
     lateinit var sponsorBlockPlaybackController: SponsorBlockPlaybackController
 
     private var playbackPreloadConfiguration: PlaybackPreloadConfiguration? = null
+
+    @Inject
+    lateinit var sourceRepository: SourceRepository
 
     private lateinit var audioManager: AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
@@ -437,6 +447,7 @@ class MusicService :
     private val remotePlaybackTrackingUrlCache = ConcurrentHashMap<String, String>()
     private val cacheBypassMediaIds = ConcurrentHashMap.newKeySet<String>()
     private val castMimeTypeCache = LruCache<String, String>(128)
+    private val sourceOkHttpClient by lazy { createSourceHttpClient().newBuilder().followRedirects(true).build() }
     private val mediaOkHttpClient: OkHttpClient by lazy {
         OkHttpClient
             .Builder()
@@ -1270,7 +1281,36 @@ class MusicService :
                     sleepTimer = SleepTimer(scope, this, this@MusicService)
                     addListener(sleepTimer)
                 }
-        sponsorBlockPlaybackController.attach(player, scope)
+        var lastSourceSettings: SourcePlaybackSettings? = null
+
+        sourceRepository.settings.collect(scope) { settings ->
+            if (sourceRepository.enabled) {
+                sponsorBlockPlaybackController.detach()
+            } else {
+                sponsorBlockPlaybackController.attach(player, scope)
+            }
+
+            applyEffectiveVolumeImmediately()
+
+            if (settings.requiresPlaybackRefresh(lastSourceSettings) && localPlayer.mediaItemCount > 0) {
+                nextStreamPreloader.cancel()
+
+                val items = (0 until localPlayer.mediaItemCount).map(localPlayer::getMediaItemAt)
+                val index = localPlayer.currentMediaItemIndex.coerceIn(items.indices)
+                val position = localPlayer.currentPosition.coerceAtLeast(0L)
+                val resumePlayback = localPlayer.playWhenReady
+
+                localPlayer.pause()
+                effectiveVolumeRampJob?.cancel()
+                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                localPlayer.setMediaItems(items, index, position)
+                localPlayer.prepare()
+                localPlayer.playWhenReady = resumePlayback
+            }
+
+            lastSourceSettings = settings
+            updateNextStreamPreload()
+        }
         playerInitialized.value = true
         observePlaybackPreloadConfiguration()
             .collect(scope) { configuration ->
@@ -2578,7 +2618,7 @@ class MusicService :
         if (nativeUsbAudio.enabled) return 1f
         val safePlayerVolume = playerVolume.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
         val safeNormalizeFactor =
-            normalizeFactor.takeIf { it.isFinite() }?.coerceIn(MIN_AUDIO_NORMALIZATION_FACTOR, MAX_AUDIO_NORMALIZATION_FACTOR) ?: 1f
+            (if (sourceRepository.enabled) 1f else normalizeFactor).takeIf { it.isFinite() }?.coerceIn(MIN_AUDIO_NORMALIZATION_FACTOR, MAX_AUDIO_NORMALIZATION_FACTOR) ?: 1f
         val safeAudioFocusVolumeFactor =
             audioFocusVolumeFactor.takeIf { it.isFinite() }?.coerceIn(MIN_AUDIO_FOCUS_VOLUME_FACTOR, 1f) ?: 1f
         return (safePlayerVolume * safeNormalizeFactor * safeAudioFocusVolumeFactor).coerceIn(0f, maxSafeGainFactor)
@@ -6784,6 +6824,7 @@ class MusicService :
         }
 
     private suspend fun registerRemotePlaybackHistory(mediaId: String): Boolean {
+        if (sourceRepository.enabled) return false
         if (database
                 .song(mediaId)
                 .first()
@@ -7140,6 +7181,7 @@ class MusicService :
                     authState = configuration.authState,
                     pinnedFormatId = null,
                 ),
+            sourceRequest = nextMediaItem.metadata?.takeUnless { it.isPodcast }?.let { SourceRequest(nextMediaId, it) },
         )
     }
 
@@ -7657,16 +7699,20 @@ class MusicService :
         }
     }
 
-    private fun createPlayerCacheDataSourceFactory(cacheWriteEnabled: Boolean): CacheDataSource.Factory =
-        CacheDataSource
-            .Factory()
-            .setCache(playerCache)
-            .setUpstreamDataSourceFactory(createResolvedUpstreamDataSourceFactory())
-            .apply {
-                if (!cacheWriteEnabled) {
-                    setCacheWriteDataSinkFactory(null)
-                }
-            }.setFlags(FLAG_IGNORE_CACHE_ON_ERROR)
+    private fun createPlayerCacheDataSourceFactory(
+        cacheWriteEnabled: Boolean,
+        upstreamFactory: DataSource.Factory = createResolvedUpstreamDataSourceFactory(),
+        cacheKeyFactory: CacheKeyFactory = CacheKeyFactory.DEFAULT,
+    ): CacheDataSource.Factory = CacheDataSource
+        .Factory()
+        .setCache(playerCache)
+        .setUpstreamDataSourceFactory(upstreamFactory)
+        .setCacheKeyFactory(cacheKeyFactory)
+        .apply {
+            if (!cacheWriteEnabled) {
+                setCacheWriteDataSinkFactory(null)
+            }
+        }.setFlags(FLAG_IGNORE_CACHE_ON_ERROR)
 
     private fun createDataSourceFactory(): DataSource.Factory {
         val downloadedFactory =
@@ -7745,6 +7791,24 @@ class MusicService :
         val uri = localConfiguration.uri
         if (uri.shouldBypassYouTubeResolver()) return mediaItem
         val mediaId = localConfiguration.customCacheKey ?: mediaItem.mediaId
+        if (sourceRepository.enabled) {
+            val metadata = mediaItem.metadata
+
+            if (metadata != null && !metadata.isPodcast) {
+                if (!blocking) return mediaItem
+
+                val stream = sourceRepository.resolve(
+                    SourceRequest(mediaId, metadata),
+                )
+
+                if (stream != null) {
+                    if (!stream.supportsCast) throw IOException(getString(R.string.sources_error_cast_format))
+
+                    return mediaItem.buildUpon().setUri(stream.url).setMimeType(stream.mimeType).build()
+                }
+            }
+        }
+
         val lowDataModeActive = isLowDataModeActive()
         val request =
             AudioStreamRequest(
@@ -8000,11 +8064,19 @@ class MusicService :
             }
         }.getOrDefault(false)
 
-    private fun createMediaSourceFactory() =
-        DefaultMediaSourceFactory(
-            createDataSourceFactory(),
-            DefaultExtractorsFactory(),
+    private fun createMediaSourceFactory(): MediaSource.Factory {
+        val youtubeFactory = createDataSourceFactory()
+        return SourceMediaSourceFactory(
+            delegate = DefaultMediaSourceFactory(youtubeFactory, DefaultExtractorsFactory()),
+            resolver = sourceRepository,
+            context = this,
+            sourceFactory = OkHttpDataSource.Factory(sourceOkHttpClient),
+            youtubeFactory = youtubeFactory,
+            cacheFactory = { upstream, keys ->
+                createPlayerCacheDataSourceFactory(!isLowDataModeActive(), upstream, keys)
+            },
         )
+    }
 
     private class SchemeRoutingDataSource(
         private val selectFactory: (DataSpec) -> DataSource.Factory,
@@ -8121,12 +8193,15 @@ class MusicService :
                     .setEnableAudioTrackPlaybackParams(true)
                     .setAudioOutputProvider(
                         directUsbAudio.provider(nativeUsbAudio.createAudioOutputProvider()) {
-                            when (nativeUsbAudio.state.value.sourceFormat?.pcmEncoding) {
+                            val sourceBits = when (nativeUsbAudio.state.value.sourceFormat?.pcmEncoding) {
                                 C.ENCODING_PCM_16BIT -> 16
                                 C.ENCODING_PCM_24BIT -> 24
                                 C.ENCODING_PCM_32BIT, C.ENCODING_PCM_FLOAT -> 32
                                 else -> null
                             }
+                            val providerBits = sourceRepository.playback.value[currentMediaMetadata.value?.id]?.bitDepth
+
+                            maxOf(sourceBits ?: 0, providerBits ?: 0).takeIf { it > 0 }
                         },
                     )
                     .build(),

@@ -1926,6 +1926,7 @@ fun BottomSheetPlayer(
                             )
                         }
 
+                        Spacer(Modifier.height(8.dp))
                         enrichedMetadata?.let {
                             controlsContent(it, false)
                         }
@@ -2389,15 +2390,18 @@ private fun LittlePlayerContent(
 
                 Spacer(Modifier.width((16f * scale).dp))
 
-                Text(
-                    text = timeText,
-                    color = timeColor,
-                    fontSize = timeSize,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.End,
-                    maxLines = 1,
-                    modifier = Modifier.widthIn(min = (140f * scale).dp),
-                )
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = timeText,
+                        color = timeColor,
+                        fontSize = timeSize,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.End,
+                        maxLines = 1,
+                        modifier = Modifier.widthIn(min = (140f * scale).dp),
+                    )
+                    StreamingSourcePill(foreground = textColor)
+                }
             }
 
             Spacer(Modifier.height((14f * scale).dp))

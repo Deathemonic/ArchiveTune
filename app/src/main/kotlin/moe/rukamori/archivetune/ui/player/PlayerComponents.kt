@@ -908,49 +908,19 @@ fun PlayerTimeLabel(
     showRemainingTime: Boolean = false,
     centerContent: @Composable (() -> Unit)? = null,
 ) {
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = PlayerHorizontalPadding + 4.dp),
-    ) {
-        Text(
-            text = makeTimeString(sliderPosition ?: position),
-            style = MaterialTheme.typography.labelMedium,
-            color = textBackgroundColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.align(Alignment.CenterStart),
-        )
-
-        if (centerContent != null) {
-            Box(
-                modifier = Modifier.align(Alignment.Center),
-                contentAlignment = Alignment.Center,
-            ) {
-                centerContent()
-            }
-        }
-
-        Text(
-            text =
-                if (duration != C.TIME_UNSET) {
-                    if (showRemainingTime) {
-                        val remaining = duration - (sliderPosition ?: position)
-                        "-${makeTimeString(remaining.coerceAtLeast(0))}"
-                    } else {
-                        makeTimeString(duration)
-                    }
-                } else {
-                    ""
-                },
-            style = MaterialTheme.typography.labelMedium,
-            color = textBackgroundColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.align(Alignment.CenterEnd),
-        )
-    }
+    StreamingSourceTimeRow(
+        position = makeTimeString(sliderPosition ?: position),
+        duration = if (duration == C.TIME_UNSET) {
+            ""
+        } else if (showRemainingTime) {
+            "-${makeTimeString((duration - (sliderPosition ?: position)).coerceAtLeast(0))}"
+        } else {
+            makeTimeString(duration)
+        },
+        foreground = textBackgroundColor,
+        modifier = Modifier.padding(horizontal = PlayerHorizontalPadding + 4.dp),
+        centerContent = { centerContent?.invoke() },
+    )
 }
 
 @Composable
@@ -1954,48 +1924,10 @@ fun PlayerControlsContent(
             duration = duration,
             textBackgroundColor = textBackgroundColor,
             showRemainingTime = playerDesignStyle == PlayerDesignStyle.V7,
-            centerContent =
-                if (playerDesignStyle == PlayerDesignStyle.V7 && currentFormat != null) {
-                    {
-                        val codec = currentFormat.mimeType.substringAfter("/").uppercase()
-                        val label =
-                            when {
-                                codec.contains("FLAC") || codec.contains("ALAC") -> "Lossless"
-                                codec.contains("OPUS") -> codec
-                                codec.contains("AAC") -> codec
-                                codec.contains("MP4A") -> "AAC"
-                                codec.contains("VORBIS") -> "Vorbis"
-                                else -> codec
-                            }
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = textBackgroundColor.copy(alpha = 0.12f),
-                        ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                ) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.graphic_eq),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
-                                        tint = textBackgroundColor.copy(alpha = 0.8f),
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(
-                                        text = label,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = textBackgroundColor.copy(alpha = 0.8f),
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        null
-                    },
-            )
+            centerContent = { StreamingSourcePill(foreground = textBackgroundColor) },
+        )
 
-            Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(12.dp))
     }
 }
 
@@ -2819,38 +2751,13 @@ private fun V8PlaybackProgress(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        Box(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-        ) {
-            Text(
-                text = makeTimeString(sliderPosition ?: position),
-                style = MaterialTheme.typography.labelMedium,
-                color = foreground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.CenterStart),
-            )
-
-            if (currentFormat != null) {
-                V8QualityChip(
-                    currentFormat = currentFormat,
-                    foreground = foreground,
-                    modifier = Modifier.align(Alignment.Center),
-                )
-            }
-
-            Text(
-                text = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
-                style = MaterialTheme.typography.labelMedium,
-                color = foreground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.CenterEnd),
-            )
-        }
+        StreamingSourceTimeRow(
+            position = makeTimeString(sliderPosition ?: position),
+            duration = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
+            foreground = foreground,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(top = 8.dp),
+        )
     }
 }
 
@@ -3430,29 +3337,14 @@ private fun V9PortraitContent(
                         .height(36.dp),
                 )
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp)
-                ) {
-                    Text(
-                        text = makeTimeString(sliderPosition ?: displayedPosition.value),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = textBackgroundColor.copy(alpha = 0.78f),
-                        maxLines = 1,
-                        modifier = Modifier.align(Alignment.CenterStart)
-                    )
-
-                    Text(
-                        text = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = textBackgroundColor.copy(alpha = 0.78f),
-                        maxLines = 1,
-                        modifier = Modifier.align(Alignment.CenterEnd)
-                    )
-                }
+                StreamingSourceTimeRow(
+                    position = makeTimeString(sliderPosition ?: displayedPosition.value),
+                    duration = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
+                    foreground = textBackgroundColor,
+                    timeColor = textBackgroundColor.copy(alpha = 0.78f),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
             }
 
             Spacer(Modifier.height(if (compactHeight) 16.dp else 24.dp))
@@ -3833,31 +3725,14 @@ private fun V9PlaybackProgress(
                 .height(36.dp),
         )
 
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = makeTimeString(sliderPosition ?: displayedPosition.value),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = textColor.copy(alpha = 0.78f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = textColor.copy(alpha = 0.78f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        StreamingSourceTimeRow(
+            position = makeTimeString(sliderPosition ?: displayedPosition.value),
+            duration = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
+            foreground = textColor,
+            timeColor = textColor.copy(alpha = 0.78f),
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.padding(top = 4.dp),
+        )
     }
 }
 
@@ -4956,21 +4831,13 @@ fun V10PlayerContent(
                         )
                     }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = formatEditorialTime(displayedProgress.coerceAtLeast(0L)),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = accent.copy(alpha = 0.8f)
-                        )
-                        Text(
-                            text = formatEditorialTime(duration.coerceAtLeast(0L)),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = accent.copy(alpha = 0.8f)
-                        )
-                    }
+                    StreamingSourceTimeRow(
+                        position = formatEditorialTime(displayedProgress.coerceAtLeast(0L)),
+                        duration = formatEditorialTime(duration.coerceAtLeast(0L)),
+                        foreground = accent,
+                        timeColor = accent.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
                 }
             }
 

@@ -1,6 +1,5 @@
 package moe.rukamori.archivetune.ui.player
 
-import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Usb
@@ -8,24 +7,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.core.net.toUri
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import java.util.Locale
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.playback.AudioSignalData
 import moe.rukamori.archivetune.playback.NativeUsbAudioStatus
-import moe.rukamori.archivetune.utils.isLocalMediaId
-
-enum class AudioSignalSource(
-    @param:StringRes val labelRes: Int,
-    @param:DrawableRes val iconRes: Int,
-) {
-    Local(R.string.audio_source_local, R.drawable.music_note),
-    Stream(R.string.audio_source_stream, R.drawable.graphic_eq),
-    YouTube(R.string.audio_source_youtube, R.drawable.youtube_music),
-    Unknown(R.string.unknown, R.drawable.graphic_eq),
-}
+import moe.rukamori.archivetune.sources.SourceFailure
+import moe.rukamori.archivetune.sources.SourceProvider
 
 @Immutable
 data class AudioSignalUiModel(
@@ -41,7 +30,9 @@ data class AudioSignalUiModel(
     val transferErrors: Long,
     val deviceName: String?,
     val deviceIcon: ImageVector,
-    val source: AudioSignalSource,
+    val source: StreamingSource,
+    val fallbackProvider: SourceProvider?,
+    val fallbackFailure: SourceFailure?,
     val bitDepth: Int?,
     val sampleRate: Int?,
     val codec: String?,
@@ -84,18 +75,11 @@ internal fun formatSampleRate(rate: Int): String = if (rate % 1000 == 0) {
 }
 
 internal fun AudioSignalData.toAudioSignalUiModel(): AudioSignalUiModel {
-    val local = metadata?.id?.isLocalMediaId() == true
-    val source = when {
-        metadata == null -> AudioSignalSource.Unknown
-        local -> AudioSignalSource.Local
-        metadata.id.toUri().scheme in setOf("http", "https") -> AudioSignalSource.Stream
-        else -> AudioSignalSource.YouTube
-    }
-
+    val stream = source.toStreamingSourceUiModel()
     val format = native.sourceFormat
 
     return AudioSignalUiModel(
-        title = metadata?.title,
+        title = stream.title,
         nativeStatus = native.status,
         outputEncoding = native.outputFormat?.encoding,
         outputSampleRate = native.outputFormat?.sampleRate,
@@ -113,12 +97,15 @@ internal fun AudioSignalData.toAudioSignalUiModel(): AudioSignalUiModel {
             else -> outputDevice.name
         },
         deviceIcon = if (usb.enabled) Icons.Rounded.Usb else outputDevice.type.imageVector,
-        source = source,
-        bitDepth = sourcePcmBitDepth(format),
-        sampleRate = format?.sampleRate?.takeIf { it > 0 },
-        codec = format?.sampleMimeType?.substringAfter('/')?.uppercase(Locale.ROOT),
+        source = stream.source,
+        fallbackProvider = stream.fallbackProvider,
+        fallbackFailure = stream.fallbackFailure,
+        bitDepth = sourcePcmBitDepth(format) ?: stream.bitDepth,
+        sampleRate = format?.sampleRate?.takeIf { it > 0 } ?: stream.sampleRate,
+        codec = format?.sampleMimeType?.substringAfter('/')?.uppercase(Locale.ROOT) ?: stream.codec,
         channelCount = format?.channelCount?.takeIf { it > 0 },
-        isLossless = format?.sampleMimeType in setOf("audio/flac", "audio/x-flac", "audio/alac", "audio/raw"),
+        isLossless = source.mimeType in setOf("audio/flac", "audio/x-flac", "audio/alac", "audio/raw") ||
+            format?.sampleMimeType in setOf("audio/flac", "audio/x-flac", "audio/alac", "audio/raw"),
         isProcessingBypassed = usb.enabled || native.status != NativeUsbAudioStatus.Disabled,
     )
 }

@@ -95,6 +95,7 @@ private fun AudioSignalContent(
             source,
             listOfNotNull(
                 model.title,
+                sourceFallbackDescription(model.fallbackProvider, model.fallbackFailure),
                 sourceFormat.takeIf {
                     it.isNotBlank()
                 },

@@ -17,34 +17,37 @@ import androidx.media3.common.Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM
 import androidx.media3.common.Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM
 import androidx.media3.common.Player.REPEAT_MODE_OFF
 import androidx.media3.common.Timeline
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.canvas.CanvasPlaybackRequest
 import moe.rukamori.archivetune.db.MusicDatabase
+import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.extensions.currentMetadata
 import moe.rukamori.archivetune.extensions.getCurrentQueueIndex
 import moe.rukamori.archivetune.extensions.getQueueWindows
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.playback.MusicService.MusicBinder
 import moe.rukamori.archivetune.playback.queues.Queue
-import moe.rukamori.archivetune.canvas.CanvasPlaybackRequest
+import moe.rukamori.archivetune.sources.SourcePlaybackStatus
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.utils.reportException
-import java.util.Locale
 
 internal enum class CanvasArtworkRefetchResult {
     Success,
@@ -78,7 +81,35 @@ class PlayerConnection(
         }
     val currentFormat =
         mediaMetadata.flatMapLatest { mediaMetadata ->
-            database.format(mediaMetadata?.id)
+            combine(
+                database.format(mediaMetadata?.id),
+                service.sourceRepository.playback,
+            ) { storedFormat, playback ->
+                val state = playback[mediaMetadata?.id].takeIf { service.sourceRepository.enabled && mediaMetadata?.id?.isLocalMediaId() != true }
+
+                if (state?.status == SourcePlaybackStatus.Selected) {
+                    FormatEntity(
+                        id = mediaMetadata?.id.orEmpty(),
+                        itag = -1,
+                        mimeType = state.mimeType.orEmpty(),
+                        codecs = when (state.mimeType) {
+                            "audio/mpeg" -> "mp3"
+                            "audio/mp4a-latm" -> "mp4a.40.2"
+                            "audio/flac" -> "flac"
+                            else -> ""
+                        },
+                        bitrate = 0,
+                        sampleRate = state.sampleRate,
+                        contentLength = 0L,
+                        loudnessDb = null,
+                        playbackUrl = null,
+                    )
+                } else if (state?.status in setOf(SourcePlaybackStatus.Resolving, SourcePlaybackStatus.Unavailable)) {
+                    null
+                } else {
+                    storedFormat
+                }
+            }
         }
 
     val queueTitle = MutableStateFlow<String?>(null)

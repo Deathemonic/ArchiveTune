@@ -77,6 +77,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.net.toUri
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.offline.Download
@@ -105,9 +106,11 @@ import moe.rukamori.archivetune.playback.CanvasArtworkRefetchResult
 import moe.rukamori.archivetune.playback.ExoDownloadService
 import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.ListDialog
+import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.component.MenuSurfaceSection
 import moe.rukamori.archivetune.ui.component.NewAction
 import moe.rukamori.archivetune.ui.component.NewActionGrid
+import moe.rukamori.archivetune.ui.player.SourceMatchPanel
 import moe.rukamori.archivetune.ui.player.rememberDeviceMusicVolumeController
 import moe.rukamori.archivetune.ui.utils.navigateToAlbum
 import moe.rukamori.archivetune.ui.utils.navigateToArtist
@@ -123,6 +126,7 @@ import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.serializeSpeedDialPins
 import moe.rukamori.archivetune.utils.shareLocalAudio
 import moe.rukamori.archivetune.utils.toggleSpeedDialPin
+import moe.rukamori.archivetune.viewmodels.SourceMatchViewModel
 import kotlin.math.abs
 import kotlin.math.log2
 import kotlin.math.pow
@@ -143,6 +147,9 @@ fun PlayerMenu(
     onDismiss: () -> Unit,
 ) {
     mediaMetadata ?: return
+    val matchViewModel: SourceMatchViewModel = hiltViewModel()
+    val providers by matchViewModel.providers.collectAsStateWithLifecycle()
+    val menu = LocalMenuState.current
     val context = LocalContext.current
     val database = LocalDatabase.current
     val playerConnection = LocalPlayerConnection.current ?: return
@@ -701,6 +708,22 @@ fun PlayerMenu(
         }
         item {
             Spacer(modifier = Modifier.height(12.dp))
+        }
+        if (!isLocalMedia && !mediaMetadata.isPodcast && providers.isNotEmpty()) {
+            item {
+                MenuSurfaceSection(modifier = Modifier.padding(vertical = 6.dp)) {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.source_choose_track)) },
+                        leadingContent = { Icon(painterResource(R.drawable.search), null) },
+                        modifier = Modifier.clickable {
+                            onDismiss()
+                            menu.show { SourceMatchPanel(mediaMetadata, onDismiss = menu::dismiss) }
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+                }
+            }
+            item { Spacer(modifier = Modifier.height(12.dp)) }
         }
         if (splitArtists.isNotEmpty() || mediaMetadata.album != null) {
             item {

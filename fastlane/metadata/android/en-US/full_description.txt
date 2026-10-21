@@ -7,6 +7,8 @@ Listen to <b>YouTube Music</b> and music stored on your device, with live synced
 <ul>
 <li>Ad-free playback with background listening</li>
 <li>Play local music files stored on your device</li>
+<li>Stream lossless music from Qobuz, Deezer, and Tidal with a paid subscription</li>
+<li>Arrange streaming-source priority with optional YouTube fallback</li>
 <li>Use bit-perfect playback with compatible native output or direct USB bypass</li>
 <li>Access your YouTube playlists, liked songs, and subscriptions</li>
 <li>Connect with your YouTube Music account</li>

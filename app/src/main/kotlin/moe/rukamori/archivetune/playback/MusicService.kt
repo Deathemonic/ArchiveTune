@@ -367,24 +367,16 @@ class MusicService :
             },
         ) {
             usbFallbackPending = true
-            Handler(mainLooper).post { fallbackToNativeAudio() }
+            Handler(mainLooper).post { fallbackToDefaultAudio() }
         }
     }
     val directUsbAudioState get() = directUsbAudio.state
-    private fun fallbackToNativeAudio() {
+    private fun fallbackToDefaultAudio() {
         if (!::localPlayer.isInitialized) return
-        val resume = localPlayer.playWhenReady
-        directUsbAudio.updateEnabled(false)
-        nativeUsbAudio.updateEnabled(true)
-        localPlayer.pause()
-        audioOutputResolver.refresh()
-        lastAudioOutputDeviceSignature = currentAudioOutputDeviceSignature()
-        rebuildLocalAudioOutput()
-        if (resume) localPlayer.play()
         scope.launch {
             dataStore.edit {
                 it[DirectUsbEnabledKey] = false
-                it[BitPerfectEnabledKey] = true
+                it[BitPerfectEnabledKey] = false
             }
             delay(AUDIO_ROUTE_CHANGE_DEBOUNCE_MS * 2)
             lastAudioOutputDeviceSignature = currentAudioOutputDeviceSignature()
@@ -1240,6 +1232,15 @@ class MusicService :
                             }
                         },
                     )
+                    addListener(
+                        object : Player.Listener {
+                            override fun onEvents(player: Player, events: Player.Events) {
+                                if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_TRACKS_CHANGED, Player.EVENT_PLAYBACK_STATE_CHANGED)) {
+                                    nativeUsbAudio.updateSource(localPlayer.audioFormat)
+                                }
+                            }
+                        },
+                    )
                     addListener(audioEffectPlayerListener)
                     setOffloadEnabled(false)
                 }
@@ -1450,7 +1451,8 @@ class MusicService :
             .distinctUntilChanged()
             .collectLatest(scope) { (enabled, direct) ->
                 if (nativeUsbAudio.enabled != enabled || directUsbAudio.enabled != direct) {
-                    player.pause()
+                    val resumePlayback = player.playWhenReady
+                    localPlayer.stop()
                     directUsbAudio.updateEnabled(direct)
                     nativeUsbAudio.updateEnabled(enabled)
                     effectiveVolumeRampJob?.cancel()
@@ -1460,6 +1462,7 @@ class MusicService :
                     if (enabled) closeAudioEffectSession() else reconcileAudioEffectSession()
                     applyEffectiveVolumeImmediately(currentEffectivePlayerVolume())
                     rebuildLocalAudioOutput()
+                    if (resumePlayback) player.play()
                 }
                 nativeUsbAudio.refresh()
             }
@@ -2461,7 +2464,7 @@ class MusicService :
         val outputSignature = currentAudioOutputDeviceSignature()
         if (outputSignature == lastAudioOutputDeviceSignature) return
         lastAudioOutputDeviceSignature = outputSignature
-        if (nativeUsbAudio.enabled) player.pause()
+        if (nativeUsbAudio.enabled) localPlayer.stop()
         audioOutputResolver.refresh()
         nativeUsbAudio.refresh()
         cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
@@ -3413,7 +3416,7 @@ class MusicService :
 
     private fun pauseForAudioFocusLoss(resumeWhenFocusReturns: Boolean) {
         audioFocusVolumeFactor.value = 1f
-        wasPlayingBeforeAudioFocusLoss = resumeWhenFocusReturns && player.playWhenReady
+        wasPlayingBeforeAudioFocusLoss = resumeWhenFocusReturns && (wasPlayingBeforeAudioFocusLoss || player.playWhenReady)
         if (player.playWhenReady) {
             player.pause()
         }
@@ -6863,7 +6866,6 @@ class MusicService :
         reason: Int,
     ) {
         super.onMediaItemTransition(mediaItem, reason)
-        nativeUsbAudio.updateSource(null)
 
         if (sleepTimer.pauseWhenSongEnd) {
             pauseFromSleepTimer()
@@ -7252,7 +7254,9 @@ class MusicService :
                 Player.EVENT_PLAY_WHEN_READY_CHANGED,
             )
         ) {
-            if (player.playWhenReady && shouldKeepAudioEffectSessionOpen()) {
+            if (player.playWhenReady &&
+                (localPlayer.playbackState == Player.STATE_BUFFERING || localPlayer.playbackState == Player.STATE_READY)
+            ) {
                 ensureAudioFocusForActivePlayback()
             }
             updateWakeLock()

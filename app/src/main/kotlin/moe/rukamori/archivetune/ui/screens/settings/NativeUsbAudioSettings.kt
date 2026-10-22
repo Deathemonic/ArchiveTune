@@ -28,6 +28,7 @@ fun NativeUsbAudioSettings(
     signalViewModel: AudioSignalViewModel = hiltViewModel(key = "audio-settings-signal"),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val usbAvailable by viewModel.usbAvailable.collectAsStateWithLifecycle()
     val signal by signalViewModel.state.collectAsStateWithLifecycle()
     val connection = LocalPlayerConnection.current
     val menu = LocalMenuState.current
@@ -44,13 +45,14 @@ fun NativeUsbAudioSettings(
         state.mode == AudioBypassMode.Usb && model?.usbEnabled == true -> stringResource(model.usbMessageRes)
         else -> nativeUsbAudioStatusText(model?.nativeStatus, state.mode != AudioBypassMode.Off)
     }
-    NativeUsbAudioSettingsContent(state, status, viewModel::setMode, onShowSignal = { menu.show { AudioSignalPanel() } })
+    NativeUsbAudioSettingsContent(state, status, usbAvailable, viewModel::setMode, onShowSignal = { menu.show { AudioSignalPanel() } })
 }
 
 @Composable
 private fun NativeUsbAudioSettingsContent(
     state: NativeUsbAudioSettingsUiState,
     status: String,
+    usbAvailable: Boolean,
     onModeSelected: (AudioBypassMode) -> Unit,
     onShowSignal: () -> Unit,
 ) {
@@ -61,6 +63,7 @@ private fun NativeUsbAudioSettingsContent(
                 icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
                 selectedValue = state.mode ?: AudioBypassMode.Off,
                 values = AudioBypassMode.entries,
+                isValueEnabled = { it != AudioBypassMode.Usb || usbAvailable },
                 valueText = { mode ->
                     stringResource(
                         when (mode) {

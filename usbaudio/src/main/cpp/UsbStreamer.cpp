@@ -163,6 +163,15 @@ bool UsbStreamer::start(uint32_t sampleRate, uint32_t sourceBits, uint32_t chann
         format_ = nullptr;
         return false;
     }
+    if (device_.uacVersion == 1 && (f.sampleRateControl || f.continuousRates || f.rates.size() > 1)) {
+        uint8_t original[3] = {};
+        const int result = libusb_control_transfer(handle_, kReqInEndpoint, kGetCur, kSamplingFreqControl << 8,
+                                                   f.endpointAddress, original, 3, 1000);
+        const uint32_t originalRate = uint32_t(original[0] | (original[1] << 8) | (original[2] << 16));
+        if (result == 3 && originalRate != 0) {
+            savedEndpointRates_.try_emplace(f.endpointAddress, EndpointRate{f.interfaceNumber, f.altSetting, originalRate});
+        }
+    }
     int rc = libusb_set_interface_alt_setting(handle_, f.interfaceNumber, f.altSetting);
     if (rc != LIBUSB_SUCCESS) {
         error = std::string("Could not select the DAC's playback mode: ") + libusb_error_name(rc);
@@ -467,6 +476,7 @@ bool UsbStreamer::setUac2Rate(size_t outputIndex, uint32_t rate, uint32_t& devic
             error = msg;
             return false;
         }
+        if (current != 0) savedClockRates_.try_emplace(source, current);
         uint8_t data[4] = {uint8_t(rate), uint8_t(rate >> 8), uint8_t(rate >> 16), uint8_t(rate >> 24)};
         const int rc = libusb_control_transfer(handle_, kReqOutInterface, kUac2Cur, kSamplingFreqControl << 8, index,
                                                data, 4, 1000);
@@ -755,6 +765,25 @@ void UsbStreamer::close() {
         eventThread_.join();
     }
     if (handle_) {
+        if (!disconnected_) {
+            for (const auto& [endpoint, saved] : savedEndpointRates_) {
+                if (libusb_set_interface_alt_setting(handle_, saved.interfaceNumber, saved.altSetting) == LIBUSB_SUCCESS) {
+                    uint8_t data[3] = {uint8_t(saved.rate), uint8_t(saved.rate >> 8), uint8_t(saved.rate >> 16)};
+                    const int rc = libusb_control_transfer(handle_, kReqOutEndpoint, kSetCur, kSamplingFreqControl << 8,
+                                                           endpoint, data, 3, 1000);
+                    LOGI("restore endpoint %u sample rate to %u Hz: %s", endpoint, saved.rate,
+                         rc == 3 ? "ok" : libusb_error_name(rc));
+                    libusb_set_interface_alt_setting(handle_, saved.interfaceNumber, 0);
+                }
+            }
+            for (const auto& [source, rate] : savedClockRates_) {
+                uint8_t data[4] = {uint8_t(rate), uint8_t(rate >> 8), uint8_t(rate >> 16), uint8_t(rate >> 24)};
+                const int rc = libusb_control_transfer(handle_, kReqOutInterface, kUac2Cur, kSamplingFreqControl << 8,
+                                                       uint16_t((source << 8) | device_.controlInterface), data, 4, 1000);
+                LOGI("restore clock %u sample rate to %u Hz: %s", source, rate,
+                     rc == 4 ? "ok" : libusb_error_name(rc));
+            }
+        }
         if (featureUnit_ && !disconnected_) {
             for (const auto& [ch, value] : savedVolume_) {
                 uint8_t buf[2] = {uint8_t(value), uint8_t(uint16_t(value) >> 8)};
@@ -784,6 +813,8 @@ void UsbStreamer::close() {
         libusb_close(handle_);  // does not close the wrapped fd; Java closes the connection
         handle_ = nullptr;
     }
+    savedEndpointRates_.clear();
+    savedClockRates_.clear();
     if (ctx_) {
         libusb_exit(ctx_);
         ctx_ = nullptr;

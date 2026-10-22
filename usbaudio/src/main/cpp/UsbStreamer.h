@@ -120,6 +120,13 @@ private:
     uac::UacDevice device_;
     const uac::FeatureUnit* featureUnit_ = nullptr;
     std::vector<uint8_t> clockSources_;  // UAC2: clock source per output format
+    std::unordered_map<uint8_t, uint32_t> savedClockRates_;
+    struct EndpointRate {
+        uint8_t interfaceNumber;
+        uint8_t altSetting;
+        uint32_t rate;
+    };
+    std::unordered_map<uint8_t, EndpointRate> savedEndpointRates_;
     bool highSpeed_ = false;
 
     // Async feedback (touched only on the libusb event thread once streaming)

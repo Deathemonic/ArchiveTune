@@ -350,6 +350,7 @@ class MusicService :
     private var audioDeviceCallbackRegistered = false
     private var audioRouteRecoveryJob: Job? = null
     private var audiblePlaybackRecoveryJob: Job? = null
+    private val usbPlaybackKeepAlive by lazy { UsbPlaybackKeepAlive(this) }
     private var lastAudioOutputDeviceSignature: String? = null
     private var lastAudioRouteRecoveryRealtimeMs = 0L
     private lateinit var audioOutputResolver: AudioOutputResolver
@@ -1202,6 +1203,7 @@ class MusicService :
         }
 
         directUsbAudio.updateEnabled(dataStore.get(DirectUsbEnabledKey, false))
+        usbPlaybackKeepAlive.prepare(directUsbAudio.enabled)
         nativeUsbAudio.updateEnabled(dataStore.get(BitPerfectEnabledKey, false) || directUsbAudio.enabled)
         localPlayer =
             ExoPlayer
@@ -1455,6 +1457,7 @@ class MusicService :
                     localPlayer.stop()
                     directUsbAudio.updateEnabled(direct)
                     nativeUsbAudio.updateEnabled(enabled)
+                    usbPlaybackKeepAlive.prepare(directUsbAudio.enabled)
                     effectiveVolumeRampJob?.cancel()
                     cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
                     localPlayer.playbackParameters = PlaybackParameters.DEFAULT
@@ -3415,6 +3418,10 @@ class MusicService :
     }
 
     private fun pauseForAudioFocusLoss(resumeWhenFocusReturns: Boolean) {
+        if (directUsbAudio.enabled) {
+            wasPlayingBeforeAudioFocusLoss = false
+            return
+        }
         audioFocusVolumeFactor.value = 1f
         wasPlayingBeforeAudioFocusLoss = resumeWhenFocusReturns && (wasPlayingBeforeAudioFocusLoss || player.playWhenReady)
         if (player.playWhenReady) {
@@ -3426,7 +3433,7 @@ class MusicService :
         if (!player.playWhenReady) return true
         if (requestAudioFocus()) return true
         pauseForAudioFocusLoss(resumeWhenFocusReturns = true)
-        return false
+        return directUsbAudio.enabled
     }
 
     private fun handleAudioFocusChange(focusChange: Int) {
@@ -7250,6 +7257,14 @@ class MusicService :
             handleDeviceMuteStateChanged(playbackRequestedWhileMuted = true)
         }
         if (events.containsAny(
+                Player.EVENT_IS_PLAYING_CHANGED,
+                Player.EVENT_PLAYBACK_STATE_CHANGED,
+                Player.EVENT_PLAY_WHEN_READY_CHANGED,
+            )
+        ) {
+            updateUsbPlaybackKeepAlive()
+        }
+        if (events.containsAny(
                 Player.EVENT_PLAYBACK_STATE_CHANGED,
                 Player.EVENT_PLAY_WHEN_READY_CHANGED,
             )
@@ -8063,6 +8078,10 @@ class MusicService :
                 ).build()
     }
 
+    private fun updateUsbPlaybackKeepAlive() {
+        usbPlaybackKeepAlive.setPlaying(directUsbAudio.enabled && player.isPlaying)
+    }
+
     private fun updateWakeLock() {
         val wl = wakeLock ?: return
         val shouldHold = wakelockEnabled && player.isPlaying
@@ -8549,6 +8568,7 @@ class MusicService :
         effectiveVolumeRampJob = null
         cancelCrossfade(resetVolume = false, resetPauseAtEnd = true)
         audioRouteRecoveryJob?.cancel()
+        usbPlaybackKeepAlive.release()
         if (audioDeviceCallbackRegistered) {
             audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
             audioDeviceCallbackRegistered = false

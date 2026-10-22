@@ -49,6 +49,7 @@ private val LOGCAT_FILTER_SPECS =
         "MusicDatabase:V",
         "MusicWidgetActions:E",
         "RLog:I",
+        "UsbAudio:W",
         "System.err:V",
         "System.out:V",
         "libc:F",

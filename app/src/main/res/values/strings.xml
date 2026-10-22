@@ -1314,4 +1314,6 @@
     <string name="source_match_connect">Connect a source to search for tracks</string>
     <string name="sources_storage_error">Could not read saved source data. Reconnect your account or choose the track again.</string>
     <string name="source_match_save_failed">Could not save the selected track</string>
+    <string name="usb_availability_unavailable">Could not check USB audio devices</string>
+    <string name="usb_background_playback_unavailable">Background playback protection is unavailable. Playback may stop when the app is in the background.</string>
 </resources>

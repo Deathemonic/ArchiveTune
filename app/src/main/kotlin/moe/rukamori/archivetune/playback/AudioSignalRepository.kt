@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import moe.rukamori.archivetune.domain.player.UsbPlaybackProtectionState
 import moe.rukamori.archivetune.models.ActiveOutputDevice
 
 data class AudioSignalData(
@@ -15,6 +16,7 @@ data class AudioSignalData(
     val native: NativeUsbAudioState,
     val usb: DirectUsbAudioState,
     val outputDevice: ActiveOutputDevice,
+    val backgroundProtection: UsbPlaybackProtectionState = UsbPlaybackProtectionState.Disabled,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -48,8 +50,9 @@ class AudioSignalRepository @Inject constructor(private val streamingSources: St
                 service.nativeUsbAudioState,
                 service.directUsbAudioState,
                 service.activeAudioDevice,
-            ) { source, native, usb, outputDevice ->
-                source?.let { AudioSignalData(it, native, usb, outputDevice) }
+                service.usbPlaybackProtectionState,
+            ) { source, native, usb, outputDevice, protection ->
+                source?.let { AudioSignalData(it, native, usb, outputDevice, protection) }
             }
         }
     }

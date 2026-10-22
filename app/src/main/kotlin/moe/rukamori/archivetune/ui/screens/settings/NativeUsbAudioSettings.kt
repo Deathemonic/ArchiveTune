@@ -21,6 +21,7 @@ import moe.rukamori.archivetune.ui.player.AudioSignalPanel
 import moe.rukamori.archivetune.viewmodels.AudioSignalViewModel
 import moe.rukamori.archivetune.viewmodels.NativeUsbAudioSettingsUiState
 import moe.rukamori.archivetune.viewmodels.NativeUsbAudioSettingsViewModel
+import moe.rukamori.archivetune.viewmodels.UsbAvailabilityUiState
 
 @Composable
 fun NativeUsbAudioSettings(
@@ -28,6 +29,7 @@ fun NativeUsbAudioSettings(
     signalViewModel: AudioSignalViewModel = hiltViewModel(key = "audio-settings-signal"),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val usbAvailability by viewModel.usbAvailability.collectAsStateWithLifecycle()
     val signal by signalViewModel.state.collectAsStateWithLifecycle()
     val connection = LocalPlayerConnection.current
     val menu = LocalMenuState.current
@@ -41,16 +43,19 @@ fun NativeUsbAudioSettings(
     val status = when {
         state is NativeUsbAudioSettingsUiState.Loading -> stringResource(R.string.loading)
         state is NativeUsbAudioSettingsUiState.Error -> stringResource(R.string.audio_settings_save_failed)
+        usbAvailability == UsbAvailabilityUiState.Error -> stringResource(R.string.usb_availability_unavailable)
+        state.mode == AudioBypassMode.Usb && model?.usbBackgroundProtectionFailed == true -> stringResource(R.string.usb_background_playback_unavailable)
         state.mode == AudioBypassMode.Usb && model?.usbEnabled == true -> stringResource(model.usbMessageRes)
         else -> nativeUsbAudioStatusText(model?.nativeStatus, state.mode != AudioBypassMode.Off)
     }
-    NativeUsbAudioSettingsContent(state, status, viewModel::setMode, onShowSignal = { menu.show { AudioSignalPanel() } })
+    NativeUsbAudioSettingsContent(state, status, usbAvailability == UsbAvailabilityUiState.Available, viewModel::setMode, onShowSignal = { menu.show { AudioSignalPanel() } })
 }
 
 @Composable
 private fun NativeUsbAudioSettingsContent(
     state: NativeUsbAudioSettingsUiState,
     status: String,
+    usbAvailable: Boolean,
     onModeSelected: (AudioBypassMode) -> Unit,
     onShowSignal: () -> Unit,
 ) {
@@ -61,6 +66,7 @@ private fun NativeUsbAudioSettingsContent(
                 icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
                 selectedValue = state.mode ?: AudioBypassMode.Off,
                 values = AudioBypassMode.entries,
+                isValueEnabled = { it != AudioBypassMode.Usb || usbAvailable },
                 valueText = { mode ->
                     stringResource(
                         when (mode) {

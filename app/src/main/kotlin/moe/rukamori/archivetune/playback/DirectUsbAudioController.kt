@@ -50,6 +50,7 @@ data class DirectUsbAudioState(
 class DirectUsbAudioController(
     private val context: Context,
     private val onReady: () -> Unit = {},
+    private val beforeOpen: () -> Unit = {},
     private val onUnavailable: () -> Unit,
 ) {
     private val manager = context.getSystemService(UsbManager::class.java)
@@ -101,7 +102,7 @@ class DirectUsbAudioController(
                     } else if (findDevice() == null) {
                         enabled = false
                         mutableState.update {
-                            it.copy(enabled = false, permissionRequired = false, deviceName = null, messageRes = R.string.usb_status_native)
+                            it.copy(enabled = false, permissionRequired = false, deviceName = null, messageRes = R.string.usb_status_off)
                         }
                         onUnavailable()
                     }
@@ -183,7 +184,8 @@ class DirectUsbAudioController(
         val device = findDevice() ?: run {
             permissionDeviceId = null
             mutableState.update { it.copy(permissionRequired = false, deviceName = null) }
-            report(R.string.usb_status_connect)
+            updateEnabled(false)
+            onUnavailable()
 
             return
         }
@@ -235,7 +237,7 @@ class DirectUsbAudioController(
         enabled = false
         output.disconnect()
         mutableState.update {
-            it.copy(enabled = false, stream = null, volume = null, permissionRequired = false, deviceName = null, messageRes = R.string.usb_status_native)
+            it.copy(enabled = false, stream = null, volume = null, permissionRequired = false, deviceName = null, messageRes = R.string.usb_status_off)
         }
         onUnavailable()
     }
@@ -388,6 +390,8 @@ class DirectUsbAudioController(
 
                     return super.getAudioOutput(config)
                 }
+                beforeOpen()
+                if (!enabled) return super.getAudioOutput(config)
                 checkUsb(active == null, R.string.usb_error_stream_closing)
 
                 return DirectUsbAudioOutput(
@@ -414,7 +418,7 @@ class DirectUsbAudioController(
                             enabled = false,
                             stream = null,
                             volume = null,
-                            messageRes = R.string.usb_status_native,
+                            messageRes = R.string.usb_status_off,
                         )
                     }
                     onUnavailable()

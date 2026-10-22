@@ -149,6 +149,7 @@ private fun AudioSignalContent(
             if (model.usbEnabled) {
                 listOfNotNull(
                     stringResource(model.usbMessageRes),
+                    if (model.usbBackgroundProtectionFailed) stringResource(R.string.usb_background_playback_unavailable) else null,
                     model.usbStream?.let {
                         stringResource(R.string.audio_usb_pcm_format, it.bitsPerSample, formatSampleRate(it.outputRate), it.channels)
                     },

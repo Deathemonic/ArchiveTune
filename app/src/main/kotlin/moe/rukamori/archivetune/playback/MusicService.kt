@@ -379,6 +379,7 @@ class MusicService :
     private var audioDeviceCallbackRegistered = false
     private var audioRouteRecoveryJob: Job? = null
     private var audiblePlaybackRecoveryJob: Job? = null
+    private val usbPlaybackKeepAlive by lazy { UsbPlaybackKeepAlive(this, ioScope) }
     private var lastAudioOutputDeviceSignature: String? = null
     private var lastAudioRouteRecoveryRealtimeMs = 0L
     private lateinit var audioOutputResolver: AudioOutputResolver
@@ -394,26 +395,20 @@ class MusicService :
                     if (::localPlayer.isInitialized && directUsbAudio.enabled) rebuildLocalAudioOutput()
                 }
             },
+            beforeOpen = { usbPlaybackKeepAlive.awaitPreparedOnPlaybackThread() },
         ) {
             usbFallbackPending = true
-            Handler(mainLooper).post { fallbackToNativeAudio() }
+            Handler(mainLooper).post { fallbackToDefaultAudio() }
         }
     }
     val directUsbAudioState get() = directUsbAudio.state
-    private fun fallbackToNativeAudio() {
+    val usbPlaybackProtectionState get() = usbPlaybackKeepAlive.state
+    private fun fallbackToDefaultAudio() {
         if (!::localPlayer.isInitialized) return
-        val resume = localPlayer.playWhenReady
-        directUsbAudio.updateEnabled(false)
-        nativeUsbAudio.updateEnabled(true)
-        localPlayer.pause()
-        audioOutputResolver.refresh()
-        lastAudioOutputDeviceSignature = currentAudioOutputDeviceSignature()
-        rebuildLocalAudioOutput()
-        if (resume) localPlayer.play()
         scope.launch {
             dataStore.edit {
                 it[DirectUsbEnabledKey] = false
-                it[BitPerfectEnabledKey] = true
+                it[BitPerfectEnabledKey] = false
             }
             delay(AUDIO_ROUTE_CHANGE_DEBOUNCE_MS * 2)
             lastAudioOutputDeviceSignature = currentAudioOutputDeviceSignature()
@@ -1246,6 +1241,7 @@ class MusicService :
         }
 
         directUsbAudio.updateEnabled(dataStore.get(DirectUsbEnabledKey, false))
+        usbPlaybackKeepAlive.prepare(directUsbAudio.enabled)
         nativeUsbAudio.updateEnabled(dataStore.get(BitPerfectEnabledKey, false) || directUsbAudio.enabled)
         localPlayer =
             ExoPlayer
@@ -1273,6 +1269,15 @@ class MusicService :
                                 decoderReuseEvaluation: DecoderReuseEvaluation?,
                             ) {
                                 nativeUsbAudio.updateSource(format)
+                            }
+                        },
+                    )
+                    addListener(
+                        object : Player.Listener {
+                            override fun onEvents(player: Player, events: Player.Events) {
+                                if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_TRACKS_CHANGED, Player.EVENT_PLAYBACK_STATE_CHANGED)) {
+                                    nativeUsbAudio.updateSource(localPlayer.audioFormat)
+                                }
                             }
                         },
                     )
@@ -1515,7 +1520,9 @@ class MusicService :
             .distinctUntilChanged()
             .collectLatest(scope) { (enabled, direct) ->
                 if (nativeUsbAudio.enabled != enabled || directUsbAudio.enabled != direct) {
-                    player.pause()
+                    val resumePlayback = player.playWhenReady
+                    localPlayer.stop()
+                    usbPlaybackKeepAlive.prepare(direct)
                     directUsbAudio.updateEnabled(direct)
                     nativeUsbAudio.updateEnabled(enabled)
                     effectiveVolumeRampJob?.cancel()
@@ -1525,6 +1532,7 @@ class MusicService :
                     if (enabled) closeAudioEffectSession() else reconcileAudioEffectSession()
                     applyEffectiveVolumeImmediately(currentEffectivePlayerVolume())
                     rebuildLocalAudioOutput()
+                    if (resumePlayback) player.play()
                 }
                 nativeUsbAudio.refresh()
             }
@@ -2497,7 +2505,7 @@ class MusicService :
         val outputSignature = currentAudioOutputDeviceSignature()
         if (outputSignature == lastAudioOutputDeviceSignature) return
         lastAudioOutputDeviceSignature = outputSignature
-        if (nativeUsbAudio.enabled) player.pause()
+        if (nativeUsbAudio.enabled) localPlayer.stop()
         audioOutputResolver.refresh()
         nativeUsbAudio.refresh()
         cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
@@ -3448,8 +3456,12 @@ class MusicService :
     }
 
     private fun pauseForAudioFocusLoss(resumeWhenFocusReturns: Boolean) {
+        if (directUsbAudio.enabled) {
+            wasPlayingBeforeAudioFocusLoss = false
+            return
+        }
         audioFocusVolumeFactor.value = 1f
-        wasPlayingBeforeAudioFocusLoss = resumeWhenFocusReturns && player.playWhenReady
+        wasPlayingBeforeAudioFocusLoss = resumeWhenFocusReturns && (wasPlayingBeforeAudioFocusLoss || player.playWhenReady)
         if (player.playWhenReady) {
             player.pause()
         }
@@ -3459,7 +3471,7 @@ class MusicService :
         if (!player.playWhenReady) return true
         if (requestAudioFocus()) return true
         pauseForAudioFocusLoss(resumeWhenFocusReturns = true)
-        return false
+        return directUsbAudio.enabled
     }
 
     private fun handleAudioFocusChange(focusChange: Int) {
@@ -7128,7 +7140,6 @@ class MusicService :
         reason: Int,
     ) {
         super.onMediaItemTransition(mediaItem, reason)
-        nativeUsbAudio.updateSource(null)
 
         if (sleepTimer.pauseWhenSongEnd) {
             pauseFromSleepTimer()
@@ -7509,11 +7520,21 @@ class MusicService :
             handleDeviceMuteStateChanged(playbackRequestedWhileMuted = true)
         }
         if (events.containsAny(
+                Player.EVENT_IS_PLAYING_CHANGED,
                 Player.EVENT_PLAYBACK_STATE_CHANGED,
                 Player.EVENT_PLAY_WHEN_READY_CHANGED,
             )
         ) {
-            if (player.playWhenReady && shouldKeepAudioEffectSessionOpen()) {
+            updateUsbPlaybackKeepAlive()
+        }
+        if (events.containsAny(
+                Player.EVENT_PLAYBACK_STATE_CHANGED,
+                Player.EVENT_PLAY_WHEN_READY_CHANGED,
+            )
+        ) {
+            if (player.playWhenReady &&
+                (localPlayer.playbackState == Player.STATE_BUFFERING || localPlayer.playbackState == Player.STATE_READY)
+            ) {
                 ensureAudioFocusForActivePlayback()
             }
             updateWakeLock()
@@ -8382,6 +8403,10 @@ class MusicService :
                 ).build()
     }
 
+    private fun updateUsbPlaybackKeepAlive() {
+        usbPlaybackKeepAlive.setPlaying(directUsbAudio.enabled && player.isPlaying)
+    }
+
     private fun updateWakeLock() {
         val wl = wakeLock ?: return
         val shouldHold = wakelockEnabled && player.isPlaying
@@ -8885,6 +8910,7 @@ class MusicService :
         effectiveVolumeRampJob = null
         cancelCrossfade(resetVolume = false, resetPauseAtEnd = true)
         audioRouteRecoveryJob?.cancel()
+        usbPlaybackKeepAlive.close()
         if (audioDeviceCallbackRegistered) {
             audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
             audioDeviceCallbackRegistered = false

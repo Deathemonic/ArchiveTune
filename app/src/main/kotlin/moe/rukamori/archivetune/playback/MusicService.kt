@@ -350,7 +350,7 @@ class MusicService :
     private var audioDeviceCallbackRegistered = false
     private var audioRouteRecoveryJob: Job? = null
     private var audiblePlaybackRecoveryJob: Job? = null
-    private val usbPlaybackKeepAlive by lazy { UsbPlaybackKeepAlive(this) }
+    private val usbPlaybackKeepAlive by lazy { UsbPlaybackKeepAlive(this, ioScope) }
     private var lastAudioOutputDeviceSignature: String? = null
     private var lastAudioRouteRecoveryRealtimeMs = 0L
     private lateinit var audioOutputResolver: AudioOutputResolver
@@ -366,12 +366,14 @@ class MusicService :
                     if (::localPlayer.isInitialized && directUsbAudio.enabled) rebuildLocalAudioOutput()
                 }
             },
+            beforeOpen = { usbPlaybackKeepAlive.awaitPreparedOnPlaybackThread() },
         ) {
             usbFallbackPending = true
             Handler(mainLooper).post { fallbackToDefaultAudio() }
         }
     }
     val directUsbAudioState get() = directUsbAudio.state
+    val usbPlaybackProtectionState get() = usbPlaybackKeepAlive.state
     private fun fallbackToDefaultAudio() {
         if (!::localPlayer.isInitialized) return
         scope.launch {
@@ -1455,9 +1457,9 @@ class MusicService :
                 if (nativeUsbAudio.enabled != enabled || directUsbAudio.enabled != direct) {
                     val resumePlayback = player.playWhenReady
                     localPlayer.stop()
+                    usbPlaybackKeepAlive.prepare(direct)
                     directUsbAudio.updateEnabled(direct)
                     nativeUsbAudio.updateEnabled(enabled)
-                    usbPlaybackKeepAlive.prepare(directUsbAudio.enabled)
                     effectiveVolumeRampJob?.cancel()
                     cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
                     localPlayer.playbackParameters = PlaybackParameters.DEFAULT
@@ -8568,7 +8570,7 @@ class MusicService :
         effectiveVolumeRampJob = null
         cancelCrossfade(resetVolume = false, resetPauseAtEnd = true)
         audioRouteRecoveryJob?.cancel()
-        usbPlaybackKeepAlive.release()
+        usbPlaybackKeepAlive.close()
         if (audioDeviceCallbackRegistered) {
             audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
             audioDeviceCallbackRegistered = false

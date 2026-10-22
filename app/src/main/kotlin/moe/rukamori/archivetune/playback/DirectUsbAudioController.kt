@@ -50,6 +50,7 @@ data class DirectUsbAudioState(
 class DirectUsbAudioController(
     private val context: Context,
     private val onReady: () -> Unit = {},
+    private val beforeOpen: () -> Unit = {},
     private val onUnavailable: () -> Unit,
 ) {
     private val manager = context.getSystemService(UsbManager::class.java)
@@ -389,6 +390,8 @@ class DirectUsbAudioController(
 
                     return super.getAudioOutput(config)
                 }
+                beforeOpen()
+                if (!enabled) return super.getAudioOutput(config)
                 checkUsb(active == null, R.string.usb_error_stream_closing)
 
                 return DirectUsbAudioOutput(

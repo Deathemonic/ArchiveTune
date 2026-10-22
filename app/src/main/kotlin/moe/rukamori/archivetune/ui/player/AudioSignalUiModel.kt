@@ -13,6 +13,7 @@ import androidx.media3.common.C
 import androidx.media3.common.Format
 import java.util.Locale
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.domain.player.UsbPlaybackProtectionState
 import moe.rukamori.archivetune.playback.AudioSignalData
 import moe.rukamori.archivetune.playback.NativeUsbAudioStatus
 import moe.rukamori.archivetune.utils.isLocalMediaId
@@ -36,6 +37,7 @@ data class AudioSignalUiModel(
     val usbEnabled: Boolean,
     @param:StringRes val usbMessageRes: Int,
     val usbPermissionRequired: Boolean,
+    val usbBackgroundProtectionFailed: Boolean,
     val usbStream: UsbStreamUiModel?,
     val underruns: Long,
     val transferErrors: Long,
@@ -102,6 +104,7 @@ internal fun AudioSignalData.toAudioSignalUiModel(): AudioSignalUiModel {
         usbEnabled = usb.enabled,
         usbMessageRes = usb.messageRes,
         usbPermissionRequired = usb.permissionRequired,
+        usbBackgroundProtectionFailed = usb.enabled && backgroundProtection is UsbPlaybackProtectionState.Error,
         usbStream = usb.stream?.let {
             UsbStreamUiModel(it.bitsPerSample, it.outputRate, it.channels, it.deviceRate, it.format.bitResolution, it.format.subslotBytes * 8)
         },

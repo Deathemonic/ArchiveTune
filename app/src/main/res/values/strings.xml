@@ -1202,4 +1202,6 @@
     <string name="audio_volume_db">%1$.1f dB</string>
     <string name="audio_settings_save_failed">Could not load or save audio settings</string>
     <string name="audio_signal_unavailable">Audio signal information is unavailable</string>
+    <string name="usb_availability_unavailable">Could not check USB audio devices</string>
+    <string name="usb_background_playback_unavailable">Background playback protection is unavailable. Playback may stop when the app is in the background.</string>
 </resources>

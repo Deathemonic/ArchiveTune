@@ -7,6 +7,6 @@ enum class AudioBypassMode { Off, Native, Usb }
 
 class ConfigureAudioOutputUseCase @Inject constructor(private val repository: AudioOutputSettingsRepository) {
     val mode = repository.mode
-    val usbAvailable = repository.usbAvailable
+    val usbAvailability = repository.usbAvailability
     suspend fun setMode(mode: AudioBypassMode) = repository.setMode(mode)
 }

@@ -12,10 +12,12 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.domain.player.AudioBypassMode
 import moe.rukamori.archivetune.domain.player.ConfigureAudioOutputUseCase
+import moe.rukamori.archivetune.domain.player.UsbAvailability
 
 @Immutable
 sealed interface NativeUsbAudioSettingsUiState {
@@ -31,11 +33,23 @@ sealed interface NativeUsbAudioSettingsUiState {
     data class Error(override val mode: AudioBypassMode?) : NativeUsbAudioSettingsUiState
 }
 
+@Immutable
+enum class UsbAvailabilityUiState { Loading, Available, Unavailable, Error }
+
 @HiltViewModel
 class NativeUsbAudioSettingsViewModel @Inject constructor(private val configure: ConfigureAudioOutputUseCase) : ViewModel() {
     private val mutableState = MutableStateFlow<NativeUsbAudioSettingsUiState>(NativeUsbAudioSettingsUiState.Loading())
     val state = mutableState.asStateFlow()
-    val usbAvailable = configure.usbAvailable.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val usbAvailability = configure.usbAvailability.map { availability ->
+        when (availability) {
+            UsbAvailability.Available -> UsbAvailabilityUiState.Available
+            UsbAvailability.Unavailable -> UsbAvailabilityUiState.Unavailable
+            UsbAvailability.Error -> UsbAvailabilityUiState.Error
+        }
+    }.catch { failure ->
+        if (failure is CancellationException) throw failure
+        emit(UsbAvailabilityUiState.Error)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UsbAvailabilityUiState.Loading)
 
     init {
         viewModelScope.launch(Dispatchers.IO) {

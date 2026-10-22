@@ -14,6 +14,8 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -73,6 +75,7 @@ internal fun observeUsbAvailability(
     register: (changed: () -> Unit) -> AutoCloseable,
     hasOutput: () -> Boolean,
 ): Flow<UsbAvailability> = callbackFlow {
+    val queryMutex = Mutex()
     fun publish() {
         val availability = try {
             if (hasOutput()) UsbAvailability.Available else UsbAvailability.Unavailable
@@ -83,9 +86,9 @@ internal fun observeUsbAvailability(
         }
         trySend(availability)
     }
-    val registration = register { launch { publish() } }
+    val registration = register { launch { queryMutex.withLock { publish() } } }
     try {
-        publish()
+        queryMutex.withLock { publish() }
         awaitClose()
     } finally {
         registration.close()

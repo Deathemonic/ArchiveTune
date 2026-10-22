@@ -339,6 +339,7 @@ dependencies {
     implementation(libs.material3)
     implementation(libs.haze)
     implementation(libs.haze.blur)
+    implementation(libs.haze.glass)
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.palette)
     implementation(libs.androidsvg)
@@ -401,6 +402,8 @@ dependencies {
     implementation(project(":shazamkit"))
     implementation(project(":spotifycore"))
     implementation(project(":morideobfuscator"))
+    implementation(project(":modules"))
+    implementation("androidx.media3:media3-exoplayer-dash:${libs.versions.media3.get()}")
     implementation("com.materialkolor:material-kolor:5.0.1")
 
     implementation(libs.webkit)

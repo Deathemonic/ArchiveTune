@@ -1971,8 +1971,10 @@ interface DatabaseDao {
                 isPodcast = mediaMetadata.isPodcast,
             ),
         )
+        val artists = mediaMetadata.artists.filter { it.name.isNotBlank() }
+        if (artists.isEmpty()) return
         songArtistMap(song.id).forEach(::delete)
-        mediaMetadata.artists.forEachIndexed { index, artist ->
+        artists.forEachIndexed { index, artist ->
             val artistId = artist.id ?: artistByName(artist.name)?.id ?: ArtistEntity.generateArtistId()
 
             insert(

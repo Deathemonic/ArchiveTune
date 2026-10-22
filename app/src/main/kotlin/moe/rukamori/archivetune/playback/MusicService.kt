@@ -224,6 +224,11 @@ import moe.rukamori.archivetune.innertube.models.response.PlayerResponse
 import moe.rukamori.archivetune.lastfm.LastFM
 import moe.rukamori.archivetune.lyrics.LyricsHelper
 import moe.rukamori.archivetune.models.MediaMetadata
+import moe.rukamori.archivetune.modules.ModuleAudioSelection
+import moe.rukamori.archivetune.modules.ModuleDownloadRepository
+import moe.rukamori.archivetune.modules.ModuleMediaStorage
+import moe.rukamori.archivetune.modules.ResolveModuleAudioUseCase
+import moe.rukamori.archivetune.modules.moduleMatchMetadata
 import moe.rukamori.archivetune.models.PersistPlayerState
 import moe.rukamori.archivetune.models.PersistQueue
 import moe.rukamori.archivetune.models.toMediaMetadata
@@ -321,6 +326,20 @@ class MusicService :
 
     @Inject
     lateinit var resolveAudioStream: ResolveAudioStreamUseCase
+
+    @Inject
+    lateinit var moduleAudio: ResolveModuleAudioUseCase
+
+    @Inject
+    lateinit var moduleBindings: ModuleDownloadRepository
+
+    @Inject
+    lateinit var moduleStorage: ModuleMediaStorage
+
+    @Inject
+    lateinit var moduleDownloadUtil: DownloadUtil
+
+    private val activeModuleAudio = ConcurrentHashMap<String, ModuleAudioSelection>()
 
     @Inject
     lateinit var observePlaybackPreloadConfiguration: ObservePlaybackPreloadConfigurationUseCase
@@ -489,6 +508,15 @@ class MusicService :
     }
 
     private var currentQueue: Queue = EmptyQueue
+    private var recommendationQueue: YouTubeQueue? = null
+    private var recommendationRequest: Job? = null
+    private var recommendationGeneration = 0L
+    private var recommendationSeed: String? = null
+    private var recommendationBuffer: List<MediaItem> = emptyList()
+    private var failedRecommendation: Triple<WatchEndpoint, Boolean, String?>? = null
+    private var queuePageJob: Job? = null
+    private var initialQueueJob: Job? = null
+    val queueRecommendations = MutableStateFlow(QueueRecommendations())
     var queueTitle: String? = null
     private var blockedArtistIds: Set<String> = emptySet()
     private var hideMusicVideos = false
@@ -503,7 +531,6 @@ class MusicService :
     @Volatile
     private var isHydratingRestoredQueue = false
     private val restoredQueueHydrationGeneration = AtomicLong(0L)
-    private var restoredQueueBackfillJob: Job? = null
 
     @Volatile
     private var suppressAutoPlayback = false
@@ -831,8 +858,6 @@ class MusicService :
     private var scrobbleManager: moe.rukamori.archivetune.utils.ScrobbleManager? = null
 
     private lateinit var widgetUpdater: MusicServiceWidgetUpdater
-
-    val autoAddedMediaIds: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
 
     private var consecutivePlaybackErr = 0
 
@@ -2211,8 +2236,6 @@ class MusicService :
 
     private fun cancelRestoredQueueHydration() {
         restoredQueueHydrationGeneration.incrementAndGet()
-        restoredQueueBackfillJob?.cancel()
-        restoredQueueBackfillJob = null
         isHydratingRestoredQueue = false
     }
 
@@ -2254,7 +2277,6 @@ class MusicService :
         for (index in player.mediaItemCount - 1 downTo 0) {
             val item = player.getMediaItemAt(index)
             if (shouldRemove(item)) {
-                autoAddedMediaIds.remove(item.mediaId)
                 if (blockedRangeEnd == C.INDEX_UNSET) {
                     blockedRangeEnd = index + 1
                 }
@@ -2274,74 +2296,48 @@ class MusicService :
     }
 
     private suspend fun restorePersistentQueue(persistedQueue: PersistQueue) {
-        cancelRestoredQueueHydration()
-        val hydrationGeneration = restoredQueueHydrationGeneration.incrementAndGet()
-        isHydratingRestoredQueue = true
-
-        val itemQueue = persistedQueue.toQueue()
-        val continuationQueue = persistedQueue.toContinuationQueue()
-        val hideExplicit = dataStore.get(HideExplicitKey, false)
-        val hideVideo = dataStore.get(HideVideoKey, false)
-        val initialStatus =
-            itemQueue
-                .getInitialStatus()
-                .filterPlaybackContent(hideExplicit, hideVideo)
-
-        withContext(Dispatchers.Main) {
-            currentQueue = continuationQueue
-            queueTitle = initialStatus.title
-
-            val items = initialStatus.items
-            if (items.isEmpty()) {
-                if (hydrationGeneration == restoredQueueHydrationGeneration.get()) {
-                    isHydratingRestoredQueue = false
-                }
-                return@withContext
+        val hydrationGeneration = withContext(Dispatchers.Main.immediate) {
+            cancelRestoredQueueHydration()
+            initialQueueJob?.cancel()
+            cancelInfiniteQueueBootstrap()
+            queuePageJob?.cancel()
+            queuePageJob = null
+            resetQueueRecommendations()
+            isHydratingRestoredQueue = true
+            restoredQueueHydrationGeneration.get()
+        }
+        try {
+            val initialStatus = withContext(Dispatchers.IO) {
+                persistedQueue.toQueue().getInitialStatus().filterPlaybackContent(
+                    dataStore.get(HideExplicitKey, false), dataStore.get(HideVideoKey, false),
+                )
             }
-
-            val fullIndex = initialStatus.mediaItemIndex.coerceIn(0, items.lastIndex)
-            val windowStart = (fullIndex - 20).coerceAtLeast(0)
-            val windowEnd = (fullIndex + 50).coerceAtMost(items.size)
-
-            val initialChunk = items.subList(windowStart, windowEnd)
-            val relativeIndex = (fullIndex - windowStart).coerceIn(0, initialChunk.lastIndex)
-
-            player.setMediaItems(
-                initialChunk,
-                relativeIndex,
-                initialStatus.position,
-            )
-            player.prepare()
-            player.playWhenReady = false
-            currentMediaMetadata.value = player.currentMetadata
-            updateNotification()
-
-            if (items.size > initialChunk.size) {
-                restoredQueueBackfillJob =
-                    scope.launch(SilentHandler) {
-                        try {
-                            delay(2000)
-                            if (!isActive || player.mediaItemCount == 0) return@launch
-                            if (windowStart > 0) {
-                                player.addMediaItems(0, items.subList(0, windowStart))
-                            }
-                            if (windowEnd < items.size) {
-                                player.addMediaItems(items.subList(windowEnd, items.size))
-                            }
-                        } finally {
-                            if (hydrationGeneration == restoredQueueHydrationGeneration.get()) {
-                                isHydratingRestoredQueue = false
-                                restoredQueueBackfillJob = null
-                                if (isActive && dataStore.get(PersistentQueueKey, true) && player.mediaItemCount > 0) {
-                                    saveQueueToDisk()
-                                }
-                            }
-                        }
-                    }
-            } else {
-                if (hydrationGeneration == restoredQueueHydrationGeneration.get()) {
-                    isHydratingRestoredQueue = false
-                }
+            withContext(Dispatchers.Main.immediate) {
+                if (hydrationGeneration != restoredQueueHydrationGeneration.get()) return@withContext
+                val source = persistedQueue.toContinuationQueue()
+                recommendationQueue = persistedQueue.recommendationData?.let { data ->
+                    YouTubeQueue(
+                        WatchEndpoint(videoId = data.videoId, playlistId = data.playlistId, params = data.endpointParams),
+                        followAutomixPreview = data.followAutomixPreview,
+                        initialContinuation = data.continuation,
+                    )
+                } ?: (source as? YouTubeQueue)?.takeIf { it.isRadio }
+                currentQueue = if (source.isRadio) EmptyQueue else source
+                queueTitle = initialStatus.title
+                if (initialStatus.items.isEmpty()) return@withContext
+                player.setMediaItems(
+                    initialStatus.items,
+                    initialStatus.mediaItemIndex.coerceIn(initialStatus.items.indices),
+                    initialStatus.position,
+                )
+                player.prepare()
+                player.playWhenReady = false
+                currentMediaMetadata.value = player.currentMetadata
+                updateNotification()
+            }
+        } finally {
+            withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main.immediate) {
+                if (hydrationGeneration == restoredQueueHydrationGeneration.get()) isHydratingRestoredQueue = false
             }
         }
     }
@@ -4199,6 +4195,9 @@ class MusicService :
         cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
         cancelInfiniteQueueBootstrap()
         suppressAutoPlayback = false
+        initialQueueJob?.cancel()
+        queuePageJob?.cancel()
+        queuePageJob = null
         currentQueue = queue
         queueTitle = null
         val permanentShuffle = dataStore.get(PermanentShuffleKey, false)
@@ -4207,14 +4206,13 @@ class MusicService :
         }
 
         clearAutomix()
-        autoAddedMediaIds.clear()
-        scope.launch(SilentHandler) {
+        initialQueueJob = scope.launch(SilentHandler) {
             val hideExplicit = dataStore.get(HideExplicitKey, false)
             val hideVideo = dataStore.get(HideVideoKey, false)
             val autoLoadMoreEnabled = dataStore.get(AutoLoadMoreKey, true)
             val preloadItem =
                 queue.preloadItem
-                    ?.toMediaItem()
+                    ?.toMediaItem()?.withQueueEntry(recommended = false)
                     ?.takeUnless { item ->
                         item.hasBlockedArtist(loadBlockedArtistIds())
                     }
@@ -4246,6 +4244,15 @@ class MusicService :
                 }
                 initialStatus = initialStatus.copy(items = expandedItems)
             }
+            if (currentQueue !== queue) return@launch
+            if (queue is YouTubeQueue && queue.isRadio) {
+                recommendationQueue = queue
+                queueRecommendations.value = QueueRecommendations(chips = queue.chips)
+                currentQueue = EmptyQueue
+            }
+            initialStatus = initialStatus.copy(items = initialStatus.items.map {
+                it.withQueueEntry(recommended = queue.isRadio, id = java.util.UUID.randomUUID().toString())
+            })
             if (initialStatus.title != null) {
                 queueTitle = initialStatus.title
             }
@@ -4280,6 +4287,7 @@ class MusicService :
                 }
             }
 
+            initialQueueJob = null
             if (
                 autoLoadMoreEnabled &&
                 player.currentMetadata?.isPodcast != true &&
@@ -4363,146 +4371,354 @@ class MusicService :
             showTogetherNotice(getString(R.string.not_allowed), key = "GUEST_RADIO_UNSUPPORTED")
             return
         }
+        val metadata = player.currentMetadata ?: return
+        if (metadata.isPodcast || isCurrentPlaybackItemLocal(metadata)) return
+        initialQueueJob?.cancel()
         cancelInfiniteQueueBootstrap()
+        queuePageJob?.cancel()
+        queuePageJob = null
+        resetQueueRecommendations()
+        currentQueue = EmptyQueue
         suppressAutoPlayback = false
-        val currentMediaMetadata = player.currentMetadata ?: return
-
-        val currentIndex = player.currentMediaItemIndex
-        val currentMediaId = currentMediaMetadata.id
-        if (currentSong.value?.song?.isLocal == true || currentMediaId.isLocalMediaId()) {
-            return
-        }
-
-        scope.launch(SilentHandler) {
-            val radioQueue =
-                YouTubeQueue(
-                    endpoint = WatchEndpoint(videoId = currentMediaId),
-                    followAutomixPreview = true,
-                )
-            val initialStatus =
-                withContext(Dispatchers.IO) {
-                    radioQueue
-                        .getInitialStatus()
-                        .filterPlaybackContent(
-                            hideExplicit = dataStore.get(HideExplicitKey, false),
-                            hideVideo = dataStore.get(HideVideoKey, false),
-                        )
+        val generation = ++recommendationGeneration
+        val seedEntry = player.currentMediaItem?.queueEntryId
+        queueRecommendations.value = QueueRecommendations(loading = true)
+        recommendationRequest = scope.launch {
+            try {
+                val queue = YouTubeQueue(WatchEndpoint(videoId = metadata.id), followAutomixPreview = true)
+                val status = withContext(Dispatchers.IO) {
+                    queue.getInitialStatus().filterPlaybackContent(
+                        dataStore.get(HideExplicitKey, false), dataStore.get(HideVideoKey, false),
+                    )
                 }
-
-            if (initialStatus.title != null) {
-                queueTitle = initialStatus.title
+                if (generation != recommendationGeneration || player.currentMediaItem?.queueEntryId != seedEntry ||
+                    player.currentMetadata?.id != metadata.id || isTogetherGuestSession()
+                ) return@launch
+                val queuePlayer = queueEditPlayer()
+                val windows = queuePlayer.getQueueWindows()
+                val currentUid = queuePlayer.currentTimeline.getWindow(queuePlayer.currentMediaItemIndex, Timeline.Window()).uid
+                val current = windows.indexOfFirst { it.uid == currentUid }
+                val future = windows.drop(current + 1)
+                removeQueueWindows(queuePlayer, future)
+                val items = status.items.filterNot { it.mediaId == metadata.id }
+                appendRecommendations(items)
+                recommendationQueue = queue
+                recommendationSeed = metadata.id
+                queueTitle = status.title ?: queueTitle
+                queueRecommendations.value = QueueRecommendations(chips = queue.chips)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Timber.e(error, "Failed to start radio")
+                if (generation == recommendationGeneration) queueRecommendations.value = QueueRecommendations(failed = true)
+            } finally {
+                if (generation == recommendationGeneration) {
+                    recommendationRequest = null
+                    queueRecommendations.value = queueRecommendations.value.copy(loading = false)
+                }
             }
-
-            val radioItems =
-                initialStatus.items.filter { item ->
-                    item.mediaId != currentMediaId
-                }
-
-            if (radioItems.isNotEmpty()) {
-                val itemCount = player.mediaItemCount
-
-                if (itemCount > currentIndex + 1) {
-                    player.removeMediaItems(currentIndex + 1, itemCount)
-                }
-
-                player.addMediaItems(currentIndex + 1, radioItems)
-            }
-
-            currentQueue = radioQueue
         }
     }
 
     fun clearAutomix() {
-        autoAddedMediaIds.clear()
+        resetQueueRecommendations()
+    }
+
+    fun clearQueueContinuation() {
+        if (isTogetherGuestSession()) return
+        cancelRestoredQueueHydration()
+        initialQueueJob?.cancel()
+        queuePageJob?.cancel()
+        queuePageJob = null
+        cancelInfiniteQueueBootstrap()
+        resetQueueRecommendations()
+        currentQueue = EmptyQueue
+    }
+
+    private fun resetQueueRecommendations() {
+        recommendationGeneration++
+        recommendationRequest?.cancel()
+        recommendationRequest = null
+        recommendationQueue = null
+        recommendationSeed = null
+        recommendationBuffer = emptyList()
+        failedRecommendation = null
+        queueRecommendations.value = QueueRecommendations()
+    }
+
+    fun refreshQueueRecommendations(force: Boolean = false) {
+        val metadata = player.currentMetadata ?: return
+        if (!dataStore.get(AutoLoadMoreKey, true) || metadata.isPodcast ||
+            isCurrentPlaybackItemLocal(metadata) || isTogetherGuestSession()
+        ) return
+        val active = recommendationQueue ?: (currentQueue as? YouTubeQueue)?.takeIf { it.isRadio }
+        val chips = queueRecommendations.value.chips.ifEmpty {
+            active?.chips.orEmpty().ifEmpty { currentQueue.queueChips }
+        }
+        if (recommendationRequest?.isActive == true || infiniteQueueJob?.isActive == true) return
+        if (force) {
+            failedRecommendation?.let { (endpoint, replace, id) ->
+                requestRecommendations(endpoint, replace, id)
+                return
+            }
+            if (queueRecommendations.value.failed && currentQueue.hasNextPage()) {
+                extendExplicitQueue()
+                return
+            }
+        }
+        if (!force && queueRecommendations.value.failed) return
+        if (!force && chips.isNotEmpty()) {
+            queueRecommendations.value = QueueRecommendations(chips = chips)
+            return
+        }
+        if (!force && (recommendationRequest?.isActive == true || recommendationSeed == metadata.id)) return
+        requestRecommendations(active?.endpoint ?: WatchEndpoint(videoId = metadata.id), replace = false)
+    }
+
+    fun selectQueueChip(id: String) {
+        if (isTogetherGuestSession() || !dataStore.get(AutoLoadMoreKey, true)) return
+        if (queueRecommendations.value.pendingChipId == id) return
+        val chip = queueRecommendations.value.chips.firstOrNull { it.id == id } ?: return
+        val endpoint = if (chip.selected) chip.deselectEndpoint ?: return else chip.endpoint
+        requestRecommendations(endpoint, replace = true, chipId = id)
+    }
+
+    private fun requestRecommendations(endpoint: WatchEndpoint, replace: Boolean, chipId: String? = null) {
+        val seed = player.currentMetadata ?: return
+        if (seed.isPodcast || isCurrentPlaybackItemLocal(seed)) return
+        val queuePlayer = queueEditPlayer()
+        recommendationRequest?.cancel()
+        if (replace) {
+            cancelInfiniteQueueBootstrap()
+        }
+        val generation = ++recommendationGeneration
+        val source = currentQueue
+        val seedEntry = queuePlayer.currentMediaItem?.queueEntryId
+        recommendationSeed = seed.id
+        val previous = queueRecommendations.value
+        failedRecommendation = null
+        queueRecommendations.value = previous.copy(loading = true, pendingChipId = chipId, failed = false)
+        recommendationRequest = scope.launch {
+            try {
+                val queue = YouTubeQueue(endpoint, followAutomixPreview = chipId == null)
+                val status = withContext(Dispatchers.IO) {
+                    queue.getInitialStatus().filterPlaybackContent(
+                        dataStore.get(HideExplicitKey, false), dataStore.get(HideVideoKey, false),
+                    )
+                }
+                if (generation != recommendationGeneration || currentQueue !== source ||
+                    queueEditPlayer() !== queuePlayer || queuePlayer.currentMediaItem?.queueEntryId != seedEntry ||
+                    queuePlayer.currentMetadata?.id != seed.id || !dataStore.get(AutoLoadMoreKey, true) ||
+                    isTogetherGuestSession()
+                ) return@launch
+                val updated = previous.acceptResponse(queue.chips, chipId)
+                queue.updateChips(updated.chips)
+                if (replace) {
+                    val incoming = recommendationItems(status.items)
+                    replaceUpcomingRecommendations(incoming)
+                    recommendationQueue = queue
+                    recommendationBuffer = emptyList()
+                    if (currentQueue.recommendationOnlyContinuation) {
+                        queuePageJob?.cancel()
+                        queuePageJob = null
+                        currentQueue = EmptyQueue
+                    }
+                } else {
+                    val active = recommendationQueue
+                    if (active == null) {
+                        recommendationQueue = queue
+                        recommendationBuffer = status.items
+                    } else active.updateChips(updated.chips)
+                }
+                queueRecommendations.value = updated
+                if (replace) saveQueueToDisk()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Timber.e(error, "Failed to update queue recommendations")
+                if (generation == recommendationGeneration) {
+                    failedRecommendation = Triple(endpoint, replace, chipId)
+                    queueRecommendations.value = previous.copy(loading = false, pendingChipId = null, failed = true)
+                }
+            } finally {
+                if (generation == recommendationGeneration) {
+                    recommendationRequest = null
+                    queueRecommendations.value = queueRecommendations.value.copy(loading = false, pendingChipId = null)
+                    if (!queueRecommendations.value.failed && recommendationBuffer.isNotEmpty() &&
+                        player.mediaItemCount - player.currentMediaItemIndex <= 3
+                    ) onInfiniteQueueEnabled()
+                }
+            }
+        }
+    }
+
+    private fun recommendationItems(items: List<MediaItem>): List<MediaItem> {
+        val queuePlayer = queueEditPlayer()
+        val replaced = upcomingRecommendationWindows(queuePlayer).mapTo(mutableSetOf()) { it.uid }
+        val known = queuePlayer.getQueueWindows()
+            .filterNot { it.uid in replaced }
+            .mapTo(mutableSetOf()) { it.mediaItem.mediaId }
+        return items.filter { known.add(it.mediaId) }.map { it.withQueueEntry(recommended = true) }
+    }
+
+    private fun upcomingRecommendationWindows(queuePlayer: Player = queueEditPlayer()): List<Timeline.Window> {
+        val timeline = queuePlayer.currentTimeline
+        if (timeline.isEmpty) return emptyList()
+        val windows = queuePlayer.getQueueWindows()
+        val currentUid = timeline.getWindow(queuePlayer.currentMediaItemIndex, Timeline.Window()).uid
+        val current = windows.indexOfFirst { it.uid == currentUid }
+        return if (current < 0) emptyList() else windows.drop(current + 1).filter { it.mediaItem.isQueueRecommendation }
+    }
+
+    private fun applyQueueTraversal(queuePlayer: Player, order: List<Any>) {
+        if (queuePlayer !is ExoPlayer || !queuePlayer.shuffleModeEnabled) return
+        val timeline = queuePlayer.currentTimeline
+        val indices = (0 until timeline.windowCount).associate { index ->
+            timeline.getWindow(index, Timeline.Window()).uid to index
+        }
+        val retained = order.mapNotNull(indices::get).distinct()
+        val seen = retained.toHashSet()
+        val remaining = (0 until timeline.windowCount).filterNot { it in seen }
+        queuePlayer.setShuffleOrder(DefaultShuffleOrder((retained + remaining).toIntArray(), System.currentTimeMillis()))
+    }
+
+    private fun insertedQueueUids(queuePlayer: Player, items: List<MediaItem>): List<Any> {
+        val windows = queuePlayer.getQueueWindows().associateBy { it.mediaItem.queueEntryId }
+        return items.mapNotNull { windows[it.queueEntryId]?.uid }
+    }
+
+    private fun removeQueueWindows(queuePlayer: Player, windows: List<Timeline.Window>) {
+        val removed = windows.mapTo(mutableSetOf()) { it.uid }
+        val timeline = queuePlayer.currentTimeline
+        val indices = (0 until timeline.windowCount).filter { index ->
+            timeline.getWindow(index, Timeline.Window()).uid in removed
+        }
+        indices.asReversed().forEach(queuePlayer::removeMediaItem)
+    }
+
+    private fun appendRecommendations(items: List<MediaItem>) {
+        val queuePlayer = queueEditPlayer()
+        val order = queuePlayer.getQueueWindows().map { it.uid }
+        queuePlayer.addMediaItems(items)
+        applyQueueTraversal(queuePlayer, order + insertedQueueUids(queuePlayer, items))
+    }
+
+    private fun replaceUpcomingRecommendations(items: List<MediaItem>) {
+        val queuePlayer = queueEditPlayer()
+        val upcoming = upcomingRecommendationWindows(queuePlayer)
+        val removed = upcoming.mapTo(mutableSetOf()) { it.uid }
+        val traversal = queuePlayer.getQueueWindows().filterNot { it.uid in removed }.map { it.uid }
+        removeQueueWindows(queuePlayer, upcoming)
+        queuePlayer.addMediaItems(items)
+        applyQueueTraversal(queuePlayer, traversal + insertedQueueUids(queuePlayer, items))
     }
 
     fun onInfiniteQueueDisabled() {
         cancelInfiniteQueueBootstrap()
-        val currentIndex = player.currentMediaItemIndex
-        val idsToRemove = synchronized(autoAddedMediaIds) { autoAddedMediaIds.toSet() }
-        if (idsToRemove.isEmpty()) {
-            return
+        resetQueueRecommendations()
+        val queuePlayer = queueEditPlayer()
+        removeQueueWindows(queuePlayer, upcomingRecommendationWindows(queuePlayer))
+        if (currentQueue.recommendationOnlyContinuation) {
+            queuePageJob?.cancel()
+            queuePageJob = null
+            currentQueue = EmptyQueue
         }
-        for (i in player.mediaItemCount - 1 downTo 0) {
-            if (i == currentIndex) continue
-            val item = player.getMediaItemAt(i)
-            if (item.mediaId in idsToRemove) {
-                player.removeMediaItem(i)
-            }
-        }
-        autoAddedMediaIds.clear()
-        currentQueue = EmptyQueue
     }
 
     fun onInfiniteQueueEnabled() {
-        val currentMeta = player.currentMetadata ?: return
-        if (currentMeta.isPodcast) return
-        if (isCurrentPlaybackItemLocal(currentMeta)) return
-        if (infiniteQueueJob?.isActive == true) return
-
-        val seedMediaId = currentMeta.id.trim().ifBlank { return }
+        val metadata = player.currentMetadata ?: return
+        if (metadata.isPodcast || isCurrentPlaybackItemLocal(metadata) || isTogetherGuestSession()) return
+        if (infiniteQueueJob?.isActive == true || recommendationRequest?.isActive == true ||
+            queuePageJob?.isActive == true || initialQueueJob?.isActive == true || currentQueue.hasNextPage()
+        ) return
+        val active = recommendationQueue
+        if (active != null && recommendationBuffer.isEmpty() && !active.hasNextPage()) return
         val generation = ++infiniteQueueGeneration
+        val recommendationVersion = recommendationGeneration
+        val seedId = metadata.id
+        val source = currentQueue
         infiniteQueueLoading.value = true
-
-        infiniteQueueJob =
-            scope.launch(SilentHandler) {
-                try {
-                    val hideExplicit = dataStore.get(HideExplicitKey, false)
-                    val hideVideo = dataStore.get(HideVideoKey, false)
-                    val radioQueue = YouTubeQueue(WatchEndpoint(videoId = seedMediaId), followAutomixPreview = true)
-                    val status =
-                        withContext(Dispatchers.IO) {
-                            radioQueue
-                                .getInitialStatus()
-                                .filterPlaybackContent(hideExplicit, hideVideo)
-                        }
-                    val knownIds =
-                        (0 until player.mediaItemCount)
-                            .mapTo(mutableSetOf()) { player.getMediaItemAt(it).mediaId }
-                    val newItems = status.items.filter { knownIds.add(it.mediaId) }.toMutableList()
-                    var loadedPageCount = 1
-
-                    while (
-                        newItems.isEmpty() &&
-                        radioQueue.hasNextPage() &&
-                        loadedPageCount < INFINITE_QUEUE_MAX_BOOTSTRAP_PAGES
-                    ) {
-                        loadedPageCount++
-                        val page =
-                            withContext(Dispatchers.IO) {
-                                radioQueue
-                                    .nextPage()
-                                    .filterPlaybackContent(hideExplicit, hideVideo)
-                            }
-                        newItems += page.filter { knownIds.add(it.mediaId) }
+        infiniteQueueJob = scope.launch {
+            try {
+                val queue = active
+                    ?: YouTubeQueue(WatchEndpoint(videoId = seedId), followAutomixPreview = true)
+                val buffered = recommendationBuffer
+                val fetchPage = recommendationQueue === queue && buffered.isEmpty() && queue.hasNextPage()
+                val (page, items) = withContext(Dispatchers.IO) {
+                    val page = if (fetchPage) queue.fetchNextPage() else null
+                    val items = when {
+                        buffered.isNotEmpty() -> buffered
+                        page != null -> page.items.map { it.toMediaItem().withQueueEntry(recommended = true) }
+                        else -> queue.getInitialStatus().items
                     }
-
-                    if (generation != infiniteQueueGeneration) return@launch
-
-                    if (newItems.isNotEmpty()) {
-                        player.addMediaItems(newItems)
-                        newItems.forEach { autoAddedMediaIds.add(it.mediaId) }
-                    }
-
-                    currentQueue = radioQueue
-
-                    if (player.playbackState == Player.STATE_ENDED ||
-                        player.mediaItemCount == player.currentMediaItemIndex + 1
-                    ) {
-                        player.seekToNext()
-                        player.play()
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Timber.e(e, "Failed to bootstrap auto-queue")
-                } finally {
-                    if (generation == infiniteQueueGeneration) {
-                        infiniteQueueJob = null
-                        infiniteQueueLoading.value = false
-                    }
+                    page to items.filterPlaybackContent(dataStore.get(HideExplicitKey, false), dataStore.get(HideVideoKey, false))
+                }
+                if (generation != infiniteQueueGeneration || recommendationVersion != recommendationGeneration ||
+                    currentQueue !== source || !dataStore.get(AutoLoadMoreKey, true) || isTogetherGuestSession()
+                ) return@launch
+                page?.let(queue::acceptNextPage)
+                val known = (0 until player.mediaItemCount).mapTo(mutableSetOf()) { player.getMediaItemAt(it).mediaId }
+                val additions = items.filter { known.add(it.mediaId) }.map { it.withQueueEntry(recommended = true) }
+                val resumeAfterEnd = player.playbackState == Player.STATE_ENDED && player.playWhenReady
+                appendRecommendations(additions)
+                if (resumeAfterEnd && player.hasNextMediaItem()) player.seekToNextMediaItem()
+                recommendationBuffer = emptyList()
+                recommendationQueue = queue
+                recommendationSeed = seedId
+                val updated = queueRecommendations.value.acceptResponse(queue.chips)
+                queue.updateChips(updated.chips)
+                queueRecommendations.value = updated
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Timber.e(error, "Failed to load queue recommendations")
+                if (generation == infiniteQueueGeneration) queueRecommendations.value = queueRecommendations.value.copy(failed = true)
+            } finally {
+                if (generation == infiniteQueueGeneration) {
+                    infiniteQueueJob = null
+                    infiniteQueueLoading.value = false
                 }
             }
+        }
+    }
+
+    private fun extendExplicitQueue() {
+        if (queuePageJob?.isActive == true || initialQueueJob?.isActive == true || !currentQueue.hasNextPage()) return
+        val queue = currentQueue
+        queueRecommendations.value = queueRecommendations.value.copy(failed = false)
+        queuePageJob = scope.launch {
+            try {
+                val items = withContext(Dispatchers.IO) {
+                    queue.nextPage().filterPlaybackContent(
+                        dataStore.get(HideExplicitKey, false), dataStore.get(HideVideoKey, false),
+                    )
+                }
+                if (currentQueue !== queue || player.playbackState == STATE_IDLE) return@launch
+                val queuePlayer = queueEditPlayer()
+                val knownEntries = queuePlayer.getQueueWindows().mapNotNullTo(mutableSetOf()) { it.mediaItem.metadata?.setVideoId }
+                val additions = items.filter { item ->
+                    item.metadata?.setVideoId?.takeIf { it.isNotBlank() }?.let(knownEntries::add) ?: true
+                }.map { it.withQueueEntry() }
+                val windows = queuePlayer.getQueueWindows()
+                val upcoming = upcomingRecommendationWindows(queuePlayer).mapTo(mutableSetOf()) { it.uid }
+                val position = windows.indexOfFirst { it.uid in upcoming }.takeIf { it >= 0 } ?: windows.size
+                if (queuePlayer.shuffleModeEnabled) {
+                    queuePlayer.addMediaItems(additions)
+                    val order = windows.map { it.uid }
+                    applyQueueTraversal(queuePlayer, order.take(position) + insertedQueueUids(queuePlayer, additions) + order.drop(position))
+                } else {
+                    queuePlayer.addMediaItems(position, additions)
+                }
+                if (queue.recommendationOnlyContinuation) {
+                    queueRecommendations.value = queueRecommendations.value.acceptResponse(queue.queueChips)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Timber.e(error, "Failed to extend explicit queue")
+                queueRecommendations.value = queueRecommendations.value.copy(failed = true)
+            }
+        }
     }
 
     private fun cancelInfiniteQueueBootstrap() {
@@ -4514,10 +4730,13 @@ class MusicService :
 
     fun stopAndClearPlayback(clearPersistentState: Boolean = false) {
         cancelRestoredQueueHydration()
+        initialQueueJob?.cancel()
+        queuePageJob?.cancel()
+        queuePageJob = null
         cancelInfiniteQueueBootstrap()
+        resetQueueRecommendations()
         suppressAutoPlayback = true
         cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
-        clearAutomix()
         currentQueue = EmptyQueue
         queueTitle = null
         waitingForNetworkConnection.value = false
@@ -4572,7 +4791,7 @@ class MusicService :
                 null
             }
 
-        player.addMediaItems(insertionIndex, allowedItems)
+        player.addMediaItems(insertionIndex, allowedItems.map { it.withQueueEntry(recommended = false, id = java.util.UUID.randomUUID().toString()) })
         playNextShuffleOrder?.let(localPlayer::setShuffleOrder)
         player.prepare()
     }
@@ -4662,7 +4881,7 @@ class MusicService :
             return
         }
         suppressAutoPlayback = false
-        player.addMediaItems(allowedItems)
+        player.addMediaItems(allowedItems.map { it.withQueueEntry(recommended = false, id = java.util.UUID.randomUUID().toString()) })
         player.prepare()
     }
 
@@ -5985,7 +6204,7 @@ class MusicService :
                 android.os.SystemClock.elapsedRealtime(),
             )
         try {
-            val desiredItems = state.queue.map { it.toMediaMetadata().toMediaItem() }
+            val desiredItems = state.queue.map { it.toMediaMetadata().toMediaItem().withQueueEntry(recommended = false) }
             val desiredIds = state.queue.map { it.id }
             val desiredHash = state.queueHash
             val localIds = player.mediaItems.mapNotNull { it.metadata?.id ?: it.mediaId }.filter { it.isNotBlank() }
@@ -6005,6 +6224,11 @@ class MusicService :
                 )
 
             if (desiredItems.isNotEmpty() && needsRebuild) {
+                initialQueueJob?.cancel()
+                cancelInfiniteQueueBootstrap()
+                queuePageJob?.cancel()
+                queuePageJob = null
+                resetQueueRecommendations()
                 togetherLastAppliedQueueHash = desiredHash.ifBlank { localHash }
                 val startIndex = state.currentIndex.coerceIn(0, desiredItems.lastIndex)
                 suppressAutoPlayback = false
@@ -6796,6 +7020,7 @@ class MusicService :
         }
 
     private suspend fun registerRemotePlaybackHistory(mediaId: String): Boolean {
+        if (activeModuleAudio.containsKey(mediaId)) return false
         if (database
                 .song(mediaId)
                 .first()
@@ -6917,6 +7142,16 @@ class MusicService :
             }
         }
 
+        if (recommendationRequest?.isActive == true && recommendationSeed != null &&
+            recommendationSeed != mediaItem?.mediaId
+        ) {
+            recommendationGeneration++
+            recommendationRequest?.cancel()
+            recommendationRequest = null
+            recommendationSeed = null
+            queueRecommendations.value = queueRecommendations.value.copy(loading = false, pendingChipId = null)
+        }
+
         val timelineEmpty = player.currentTimeline.isEmpty || player.mediaItemCount == 0 || player.currentMediaItem == null
         currentMediaMetadata.value = if (timelineEmpty) null else (mediaItem?.metadata ?: player.currentMetadata)
 
@@ -6942,23 +7177,7 @@ class MusicService :
             currentQueue.hasNextPage() &&
             player.repeatMode == REPEAT_MODE_OFF
         ) {
-            scope.launch(SilentHandler) {
-                val mediaItems =
-                    currentQueue
-                        .nextPage()
-                        .filterPlaybackContent(
-                            hideExplicit = dataStore.get(HideExplicitKey, false),
-                            hideVideo = dataStore.get(HideVideoKey, false),
-                        )
-                if (player.playbackState != STATE_IDLE) {
-                    player.addMediaItems(mediaItems.drop(1))
-                } else {
-                    requestDiscordSync(
-                        reason = "player_idle_after_queue_extension",
-                        force = true,
-                    )
-                }
-            }
+            extendExplicitQueue()
         }
 
         if (!suppressAutoPlayback &&
@@ -7150,6 +7369,7 @@ class MusicService :
                     purpose = StreamPurpose.PLAYBACK,
                     authState = configuration.authState,
                     pinnedFormatId = null,
+                    moduleMetadata = nextMediaItem.metadata?.moduleMatchMetadata(),
                 ),
         )
     }
@@ -7518,6 +7738,10 @@ class MusicService :
         recoverySnapshot: PlaybackRecoverySnapshot,
     ) {
         val currentMediaId = recoverySnapshot.mediaId
+        if (activeModuleAudio.containsKey(currentMediaId)) {
+            if (dataStore.get(AutoSkipNextOnErrorKey, false)) skipOnError() else stopOnError()
+            return
+        }
         val isLocalMedia = currentMediaId.isLocalMediaId() ||
             player.currentMediaItem?.localConfiguration?.uri?.shouldBypassPlayerCache() == true
         val (isFullyDownloadedMedia, hasAnyCachedData) = withContext(Dispatchers.IO) {
@@ -7774,6 +7998,7 @@ class MusicService :
                 networkMetered = lowDataModeActive,
                 purpose = StreamPurpose.PLAYBACK,
                 authState = YouTube.currentPlaybackAuthState(),
+                allowModules = false,
             )
         val resolved =
             if (blocking) {
@@ -7829,6 +8054,7 @@ class MusicService :
                             purpose = StreamPurpose.PLAYBACK,
                             authState = YouTube.currentPlaybackAuthState(),
                             pinnedFormatId = pinnedFormatId,
+                            allowModules = false,
                         ),
                     ).also { resolved ->
                         resolvedRequestHeaders = resolved.requestHeaders
@@ -8021,11 +8247,34 @@ class MusicService :
             }
         }.getOrDefault(false)
 
-    private fun createMediaSourceFactory() =
-        DefaultMediaSourceFactory(
-            createDataSourceFactory(),
-            DefaultExtractorsFactory(),
+    private fun createMediaSourceFactory(): androidx.media3.exoplayer.source.MediaSource.Factory =
+        ModuleMediaSourceFactory(
+            delegate = DefaultMediaSourceFactory(createDataSourceFactory(), DefaultExtractorsFactory()),
+            resolver = moduleAudio,
+            bindings = moduleBindings,
+            storage = moduleStorage,
+            completedDownload = { id ->
+                moduleDownloadUtil.downloadManager.downloadIndex.getDownload(id)?.state == androidx.media3.exoplayer.offline.Download.STATE_COMPLETED
+            },
+            selected = ::onModuleAudioSelected,
         )
+
+    private fun onModuleAudioSelected(mediaId: String, selection: ModuleAudioSelection?) {
+        if (selection == null) {
+            activeModuleAudio.remove(mediaId)
+        } else {
+            activeModuleAudio[mediaId] = selection
+            if (activeModuleAudio.size > 256) {
+                activeModuleAudio.keys.filter { it != mediaId }.take(activeModuleAudio.size - 256).forEach(activeModuleAudio::remove)
+            }
+            remotePlaybackTrackingUrlCache.remove(mediaId)
+            audioNormalizationFactorCache[mediaId] = 1f
+            selection.stream.mimeType.toCastMimeType()?.let { castMimeTypeCache.put(mediaId, it) }
+            scope.launch {
+                if (currentMediaMetadata.value?.id == mediaId) normalizeFactor.value = 1f
+            }
+        }
+    }
 
     private class SchemeRoutingDataSource(
         private val selectFactory: (DataSpec) -> DataSource.Factory,
@@ -8521,7 +8770,8 @@ class MusicService :
                     return@withContext null
                 }
 
-                val mediaItemsSnapshot = player.mediaItems.mapNotNull { it.toPersistableMetadata() }
+                val entrySnapshot = player.mediaItems.mapNotNull { item -> item.toPersistableMetadata()?.let { it to item } }
+                val mediaItemsSnapshot = entrySnapshot.map { it.first }
                 if (mediaItemsSnapshot.isEmpty()) return@withContext null
 
                 val currentMediaItemIndex = player.currentMediaItemIndex
@@ -8532,6 +8782,19 @@ class MusicService :
                         items = mediaItemsSnapshot,
                         mediaItemIndex = currentMediaItemIndex,
                         position = currentPosition,
+                    ).copy(
+                        entryMetadata = entrySnapshot.map { (_, item) ->
+                            moe.rukamori.archivetune.models.PersistQueueEntry(item.queueEntryId ?: java.util.UUID.randomUUID().toString(), item.isQueueRecommendation)
+                        },
+                        recommendationData = recommendationQueue?.let { queue ->
+                            moe.rukamori.archivetune.models.QueueData.YouTubeData(
+                                videoId = queue.endpoint.videoId,
+                                playlistId = queue.endpoint.playlistId,
+                                endpointParams = queue.endpoint.params,
+                                followAutomixPreview = queue.followAutomixPreview,
+                                continuation = queue.continuation,
+                            )
+                        },
                     )
                 val persistPlayerState =
                     PersistPlayerState(
@@ -8815,7 +9078,6 @@ class MusicService :
         private const val TAG = "MusicService"
         private const val AUDIO_EFFECT_INITIALIZATION_MAX_ATTEMPTS = 4
         private const val AUDIO_EFFECT_INITIALIZATION_RETRY_DELAY_MS = 250L
-        private const val INFINITE_QUEUE_MAX_BOOTSTRAP_PAGES = 3
         private const val DISCORD_SYNC_TAG = "DiscordSync"
         private const val DISCORD_HOLD_TIMEOUT_MS = 7_000L
         const val CHANNEL_ID = "music_channel_01"

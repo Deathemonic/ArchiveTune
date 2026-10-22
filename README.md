@@ -215,22 +215,6 @@ If you choose to use a fork, you do so at your own risk.
         </a>
       </td>
     </tr>
-    <tr>
-      <th align="center">OpenAPK</th>
-      <th align="center">Unclouded</th>
-    </tr>
-    <tr>
-      <td align="center">
-        <a href="https://www.openapk.net/archivetune/moe.rukamori.archivetune/">
-          <img src="https://www.openapk.net/images/openapk-badge.png" height="75" alt="Get ArchiveTune on OpenAPK">
-        </a>
-      </td>
-      <td align="center">
-        <a href="https://unclouded.app/apps/archivetune/">
-          <img src="https://raw.githubusercontent.com/rukamori/ArchiveTune/refs/heads/dev/assets/badge_unclouded.png" height="50" alt="Get ArchiveTune on Unclouded">
-        </a>
-      </td>
-    </tr>
   </tbody>
 </table>
 

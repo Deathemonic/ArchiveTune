@@ -57,6 +57,7 @@ import moe.rukamori.archivetune.constants.NavigationBarMaxWidth
 import moe.rukamori.archivetune.constants.NavigationBarMode
 import moe.rukamori.archivetune.constants.SwipeSensitivityKey
 import moe.rukamori.archivetune.ui.component.FloatingBarBlurBackground
+import moe.rukamori.archivetune.ui.component.FloatingBarGlassBackground
 import moe.rukamori.archivetune.ui.theme.PlayerColorExtractor
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
@@ -237,6 +238,7 @@ private fun NewMiniPlayer(
                 palette = backgroundPalette,
                 hazeState = hazeState,
                 pureBlack = pureBlack,
+                shape = miniPlayerShape,
                 modifier = Modifier.fillMaxSize(),
             )
             NewMiniPlayerContent(
@@ -307,6 +309,7 @@ private fun MiniPlayerBackground(
     palette: MiniPlayerBackgroundPalette?,
     hazeState: HazeState,
     pureBlack: Boolean,
+    shape: RoundedCornerShape,
     modifier: Modifier = Modifier,
 ) {
     when (style) {
@@ -321,6 +324,15 @@ private fun MiniPlayerBackground(
             FloatingBarBlurBackground(
                 hazeState = hazeState,
                 isAcrylic = style == MiniPlayerBackgroundStyle.ACRYLIC,
+                pureBlack = pureBlack,
+                modifier = modifier,
+            )
+        }
+
+        MiniPlayerBackgroundStyle.GLASS -> {
+            FloatingBarGlassBackground(
+                hazeState = hazeState,
+                shape = shape,
                 pureBlack = pureBlack,
                 modifier = modifier,
             )

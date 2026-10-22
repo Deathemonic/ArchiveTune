@@ -35,6 +35,7 @@ constructor(
     @PlayerCache private val playerCache: Cache,
     @DownloadCache private val downloadCache: Cache,
     private val sourceRepository: SourceRepository,
+    private val moduleAudio: moe.rukamori.archivetune.modules.ResolveModuleAudioUseCase,
     @SourceApplicationScope private val scope: CoroutineScope,
 ) {
     private data class Target(val request: AudioStreamRequest, val sourceRequest: SourceRequest?)
@@ -49,7 +50,10 @@ constructor(
         lateinit var preloadFailure: AtomicReference<Throwable?>
         val jobToStart =
             synchronized(lock) {
-                if (target == nextTarget) return
+                if (target == nextTarget || (!sourceRepository.enabled && moduleAudio.enabled() && target?.let {
+                        it.request.mediaId == request.mediaId && it.request.moduleMetadata == request.moduleMetadata &&
+                            it.request.purpose == request.purpose && it.sourceRequest == sourceRequest
+                    } == true)) return
 
                 val previousJob = job
                 preloadFailure = AtomicReference()
@@ -94,6 +98,11 @@ constructor(
         if (target.sourceRequest != null && sourceRepository.enabled && sourceRepository.preload(target.sourceRequest)) return
 
         if (resolveAudioStream.peek(target.request) != null) return
+
+        if (moduleAudio.enabled() && target.request.allowModules) {
+            resolveAudioStream.preload(target.request)
+            return
+        }
 
         val cacheKey = target.request.mediaId
         if (playerCache.isFullyCached(cacheKey) || downloadCache.isFullyCached(cacheKey)) return

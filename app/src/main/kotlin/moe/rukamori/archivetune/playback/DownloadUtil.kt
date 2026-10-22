@@ -86,6 +86,9 @@ class DownloadUtil
         @PlayerCache val playerCache: Cache,
         private val downloadedArtworkRepository: DownloadedArtworkRepository,
         private val resolveAudioStream: ResolveAudioStreamUseCase,
+        private val moduleAudio: moe.rukamori.archivetune.modules.ResolveModuleAudioUseCase,
+        private val moduleBindings: moe.rukamori.archivetune.modules.ModuleDownloadRepository,
+        private val moduleStorage: moe.rukamori.archivetune.modules.ModuleMediaStorage,
     ) {
         private val audioQuality by enumPreference(context, AudioQualityKey, AudioQuality.AUTO)
         private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -202,7 +205,14 @@ class DownloadUtil
                 context,
                 DefaultDownloadIndex(databaseProvider),
                 DownloaderFactory { request ->
-                    ResumingDownloader(request, downloaderFactory, ::resetDownloadContent)
+                    ModuleSelectingDownloader(
+                        request,
+                        DownloaderFactory { standardRequest -> ResumingDownloader(standardRequest, downloaderFactory, ::resetDownloadContent) },
+                        moduleAudio,
+                        moduleBindings,
+                        moduleStorage,
+                        downloadScope,
+                    )
                 },
             ).apply {
                 maxParallelDownloads = MAX_PARALLEL_DOWNLOADS
@@ -396,6 +406,7 @@ class DownloadUtil
                 authState = YouTube.currentPlaybackAuthState(),
                 pinnedFormatId = pinnedFormatId,
                 requiresSongMetadata = requiresSongMetadata,
+                allowModules = false,
             )
         }
 

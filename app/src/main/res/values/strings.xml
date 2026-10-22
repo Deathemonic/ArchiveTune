@@ -562,7 +562,7 @@
     <string name="audio_quality_high">High</string>
     <string name="audio_quality_low">Low</string>
     <string name="low_data_mode_title">Low Data Mode</string>
-    <string name="low_data_mode_description">Reduces mobile data usage by using low-quality streams and disabling playback cache and canvas on metered networks</string>
+    <string name="low_data_mode_description">Uses lower-quality YouTube streams and disables playback cache and canvas on metered networks. Module audio quality stays unchanged.</string>
     <string name="preload_next_song_title">Preload Mode</string>
     <string name="preload_next_song_warning">Uses additional data, battery, and processing in the background.</string>
     <string name="sponsor_block_group">Sponsor Block</string>
@@ -580,6 +580,17 @@
     <string name="sponsor_block_subscription_reminders">Subscription reminders</string>
     <string name="sponsor_block_hooks">Hook/Greetings</string>
     <string name="queue">Queue</string>
+    <string name="queue_empty">Your queue is empty</string>
+    <string name="queue_action_failed">Couldn’t update the queue. Try again.</string>
+    <string name="queue_recommendations_failed">Couldn’t load recommendations</string>
+    <string name="queue_lock">Lock queue editing</string>
+    <string name="queue_unlock">Unlock queue editing</string>
+    <string name="queue_reorder">Reorder song</string>
+    <string name="queue_move_up">Move up</string>
+    <string name="queue_move_down">Move down</string>
+    <string name="queue_select_song">Select song</string>
+    <string name="queue_select_all">Select all</string>
+    <string name="queue_deselect_all">Deselect all</string>
     <string name="persistent_queue">Persistent queue</string>
     <string name="persistent_queue_desc">Restore your last queue when the app starts</string>
     <string name="permanent_shuffle">Permanent shuffle mode</string>

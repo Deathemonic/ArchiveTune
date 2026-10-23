@@ -43,7 +43,6 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedListItem
-import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -168,7 +167,11 @@ fun QueueScreen(
                         }
                     }
                     itemsIndexed(model.entries.values, key = { _, row -> row.id }, contentType = { _, row -> if (row.current) "queue_current" else "queue_song" }) { index, entry ->
-                        ReorderableItem(reorderable, key = entry.id) { dragging ->
+                        ReorderableItem(
+                            reorderable,
+                            key = entry.id,
+                            modifier = Modifier.padding(vertical = if (entry.current) 4.dp else 0.dp),
+                        ) { dragging ->
                             val swipe = rememberSwipeToDismissBoxState(positionalThreshold = { it * 0.8f })
                             LaunchedEffect(swipe.currentValue) {
                                 if (swipe.currentValue != SwipeToDismissBoxValue.Settled) onAction(QueueAction.Remove(entry.id))
@@ -200,9 +203,18 @@ fun QueueScreen(
                             else SwipeToDismissBox(
                                 state = swipe,
                                 backgroundContent = {
-                                    Box(Modifier.fillMaxSize().clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.errorContainer).padding(16.dp),
-                                        contentAlignment = Alignment.CenterEnd) {
-                                        Icon(painterResource(R.drawable.delete), null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                                    if (swipe.dismissDirection != SwipeToDismissBoxValue.Settled) {
+                                        Box(
+                                            modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.large)
+                                                .background(MaterialTheme.colorScheme.errorContainer).padding(16.dp),
+                                            contentAlignment = if (swipe.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
+                                                Alignment.CenterStart
+                                            } else {
+                                                Alignment.CenterEnd
+                                            },
+                                        ) {
+                                            Icon(painterResource(R.drawable.delete), null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                                        }
                                     }
                                 },
                             ) { content() }
@@ -279,24 +291,20 @@ private fun QueueSongRow(
         onLongClickLabel = stringResource(R.string.queue_select_song),
         shapes = shapes,
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(vertical = if (entry.current) 4.dp else 0.dp)
+        modifier = Modifier.fillMaxWidth()
             .semantics { customActions = accessibility },
         colors = ListItemDefaults.segmentedColors(containerColor = container),
         leadingContent = {
-            Box(
-                modifier = if (controls.locked) Modifier else handle.semantics { contentDescription = reorderDescription },
-            ) {
-                QueueArtwork(entry.artworkUrl, entry.current, loadArtwork)
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 if (!controls.locked) {
-                    Surface(
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                        shape = MaterialTheme.shapes.extraSmall,
-                        color = colors.surfaceContainerHighest,
-                        contentColor = colors.onSurfaceVariant,
+                    Box(
+                        modifier = handle.size(48.dp).semantics { contentDescription = reorderDescription },
+                        contentAlignment = Alignment.Center,
                     ) {
                         Icon(painterResource(R.drawable.drag_handle), null, Modifier.size(24.dp))
                     }
                 }
+                QueueArtwork(entry.artworkUrl, entry.current && controls.locked, loadArtwork)
             }
         },
         overlineContent = if (entry.current) {

@@ -172,6 +172,7 @@ private fun ModuleHome(model: ModuleSettingsUiModel, onAction: (ModuleSettingsAc
                 modifier = Modifier.fillMaxWidth().padding(bottom = SettingsDimensions.SectionSpacing).semantics { role = Role.Switch },
                 enabled = model.busy == null,
                 colors = ListItemDefaults.segmentedColors(),
+                verticalAlignment = Alignment.CenterVertically,
                 leadingContent = { ModuleListIcon(R.drawable.extension) },
                 trailingContent = { Switch(model.enabled, onCheckedChange = null, enabled = model.busy == null) },
                 supportingContent = { Text(stringResource(R.string.modules_enabled_description)) },

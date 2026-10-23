@@ -142,7 +142,7 @@ fun QueueScreen(
                 }
             },
         ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding)) {
+            Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
                 QueueHeader(model, onAction, headerModifier, showPlaybackControls = !scrollingHeader)
                 if (!scrollingHeader) {
                     QueueRecommendationChips(model, onAction)
@@ -150,7 +150,11 @@ fun QueueScreen(
                 }
                 LazyColumn(
                     state = listState,
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        bottom = padding.calculateBottomPadding() + 32.dp,
+                    ),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                     modifier = Modifier.weight(1f).navigationBarsPadding(),
                 ) {

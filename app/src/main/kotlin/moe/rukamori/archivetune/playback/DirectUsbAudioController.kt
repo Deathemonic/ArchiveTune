@@ -228,6 +228,8 @@ class DirectUsbAudioController(
         return manager.hasPermission(device)
     }
 
+    internal fun hasAttachedDevice(): Boolean = findDevice() != null
+
     private fun findDevice(): UsbDevice? = manager.deviceList.values
         .filter { UsbAudioOutput.isUsbAudioOutput(it) }.sortedBy { it.deviceId }.firstOrNull()
 

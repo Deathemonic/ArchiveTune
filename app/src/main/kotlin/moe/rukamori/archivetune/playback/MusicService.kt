@@ -377,6 +377,7 @@ class MusicService :
     val nativeUsbAudioState get() = nativeUsbAudio.state
 
     @Volatile private var usbFallbackPending = false
+    private var usbFallbackJob: Job? = null
     private val directUsbAudio: DirectUsbAudioController by lazy {
         DirectUsbAudioController(
             this,
@@ -394,16 +395,53 @@ class MusicService :
     val directUsbAudioState get() = directUsbAudio.state
     val usbPlaybackProtectionState get() = usbPlaybackKeepAlive.state
     private fun fallbackToDefaultAudio() {
-        if (!::localPlayer.isInitialized) return
-        scope.launch {
-            dataStore.edit {
-                it[DirectUsbEnabledKey] = false
-                it[BitPerfectEnabledKey] = false
-            }
-            delay(AUDIO_ROUTE_CHANGE_DEBOUNCE_MS * 2)
-            lastAudioOutputDeviceSignature = currentAudioOutputDeviceSignature()
-            audioOutputResolver.refresh()
+        if (!::localPlayer.isInitialized) {
             usbFallbackPending = false
+            return
+        }
+        if (usbFallbackJob?.isActive == true) return
+        usbFallbackJob = scope.launch {
+            try {
+                val attached = withContext(Dispatchers.IO) {
+                    delay(AUDIO_ROUTE_CHANGE_DEBOUNCE_MS * 2)
+                    try {
+                        directUsbAudio.hasAttachedDevice()
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+                if (dataStore.data.first()[DirectUsbEnabledKey] != true) return@launch
+                when (attached) {
+                    true -> {
+                        usbPlaybackKeepAlive.prepare(true)
+                        directUsbAudio.updateEnabled(true)
+                        if (localPlayer.playbackState != Player.STATE_IDLE && localPlayer.playbackState != Player.STATE_ENDED) {
+                            rebuildLocalAudioOutput()
+                        }
+                        updateUsbPlaybackKeepAlive()
+                    }
+                    false -> {
+                        var switchedOff = false
+                        dataStore.edit {
+                            if (it[DirectUsbEnabledKey] == true) {
+                                it[DirectUsbEnabledKey] = false
+                                it[BitPerfectEnabledKey] = false
+                                switchedOff = true
+                            }
+                        }
+                        if (switchedOff) {
+                            delay(AUDIO_ROUTE_CHANGE_DEBOUNCE_MS * 2)
+                            lastAudioOutputDeviceSignature = currentAudioOutputDeviceSignature()
+                            audioOutputResolver.refresh()
+                        }
+                    }
+                    null -> directUsbAudio.report(R.string.usb_error_transfer)
+                }
+            } finally {
+                usbFallbackPending = false
+            }
         }
     }
 

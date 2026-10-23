@@ -332,6 +332,9 @@ class MusicService :
     @Inject
     lateinit var moduleDownloadUtil: DownloadUtil
 
+    @Inject
+    lateinit var modulePlaybackSources: moe.rukamori.archivetune.modules.ModulePlaybackSourceRepository
+
     private val activeModuleAudio = ConcurrentHashMap<String, ModuleAudioSelection>()
 
     @Inject
@@ -8128,6 +8131,9 @@ class MusicService :
         )
 
     private fun onModuleAudioSelected(mediaId: String, selection: ModuleAudioSelection?) {
+        modulePlaybackSources.selected(mediaId, selection?.let {
+            moe.rukamori.archivetune.modules.ModulePlaybackSource(it.module.id, it.module.manifest.name)
+        })
         if (selection == null) {
             activeModuleAudio.remove(mediaId)
         } else {

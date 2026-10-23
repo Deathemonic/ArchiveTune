@@ -274,6 +274,7 @@ private fun QueueSongRow(
         onLongClick = select,
         onLongClickLabel = stringResource(R.string.queue_select_song),
         shapes = shapes,
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(vertical = if (entry.current) 4.dp else 0.dp)
             .semantics { customActions = accessibility },
         colors = ListItemDefaults.segmentedColors(containerColor = container),
@@ -306,7 +307,12 @@ private fun QueueSongRow(
         } else null,
         supportingContent = {
             val metadata = remember(entry.artists, entry.duration) { joinByBullet(entry.artists, entry.duration) }
-            Text(metadata, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                metadata,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         },
         trailingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {

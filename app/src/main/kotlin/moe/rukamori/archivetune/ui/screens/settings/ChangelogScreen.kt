@@ -25,7 +25,6 @@ import androidx.navigation.NavController
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.UpdateChannel
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.MarkdownText
 import moe.rukamori.archivetune.ui.utils.backToMain
@@ -38,7 +37,6 @@ import java.util.Locale
 @Composable
 fun ChangelogScreen(
     navController: NavController,
-    channel: UpdateChannel = UpdateChannel.STABLE,
 ) {
     val coroutineScope = rememberCoroutineScope()
     var releases by remember { mutableStateOf<List<ReleaseInfo>>(emptyList()) }
@@ -46,11 +44,7 @@ fun ChangelogScreen(
     var error by remember { mutableStateOf<String?>(null) }
 
     suspend fun loadReleases(forceRefresh: Boolean) {
-        val result =
-            when (channel) {
-                UpdateChannel.ARTIFACT -> Updater.getAllArtifactReleases(forceRefresh = forceRefresh)
-                else -> Updater.getAllReleases(forceRefresh = forceRefresh)
-            }
+        val result = Updater.getAllReleases(forceRefresh = forceRefresh)
         result
             .onSuccess { r ->
                 releases = r
@@ -64,11 +58,7 @@ fun ChangelogScreen(
     }
 
     LaunchedEffect(Unit) {
-        val cachedReleases =
-            when (channel) {
-                UpdateChannel.ARTIFACT -> Updater.getCachedArtifactReleases()
-                else -> Updater.getCachedReleases()
-            }
+        val cachedReleases = Updater.getCachedReleases()
         if (cachedReleases.isNotEmpty()) {
             releases = cachedReleases
             isLoading = false

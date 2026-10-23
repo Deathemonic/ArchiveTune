@@ -24,8 +24,6 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import moe.rukamori.archivetune.BuildConfig
-import moe.rukamori.archivetune.constants.UpdateChannel
-import moe.rukamori.archivetune.defaultUpdateChannel
 import moe.rukamori.archivetune.musicrecognition.MusicRecognitionRoute
 import moe.rukamori.archivetune.musicrecognition.MusicRecognitionDetailsRoute
 import moe.rukamori.archivetune.ui.screens.BrowseScreen
@@ -488,20 +486,8 @@ fun NavGraphBuilder.navigationBuilder(
             UpdateScreen(navController, onUpToDate = onClearUpdateBadge)
         }
     }
-    composable(
-        route = "settings/changelog?channel={channel}",
-        arguments =
-            listOf(
-                navArgument("channel") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                },
-            ),
-    ) { backStackEntry ->
-        val channelName = backStackEntry.arguments?.getString("channel")
-        val channel = UpdateChannel.fromStoredName(channelName, defaultUpdateChannel)
-        ChangelogScreen(navController, channel = channel)
+    composable("settings/changelog") {
+        ChangelogScreen(navController)
     }
     composable("settings/about") {
         AboutScreen(navController)

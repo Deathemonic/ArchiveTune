@@ -915,7 +915,6 @@ val RemindAfterKey = intPreferencesKey("remind_after")
 // Update settings
 val AutomaticUpdateCheckKey = booleanPreferencesKey("automaticUpdateCheck")
 val EnableUpdateNotificationKey = booleanPreferencesKey("enableUpdateNotification")
-val UpdateChannelKey = stringPreferencesKey("updateChannel")
 val LastUpdateCheckKey = longPreferencesKey("lastUpdateCheck")
 val LastNotifiedVersionKey = stringPreferencesKey("lastNotifiedVersion")
 
@@ -930,29 +929,7 @@ val GitHubReleasesJsonKey = stringPreferencesKey("github_releases_json")
 val GitHubReleasesLastCheckedAtKey = longPreferencesKey("github_releases_last_checked_at")
 val GitHubReleasesFingerprintKey = stringPreferencesKey("github_releases_fingerprint")
 
-val CanaryReleasesEtagKey = stringPreferencesKey("daily_nightly_releases_etag")
-val CanaryReleasesJsonKey = stringPreferencesKey("daily_nightly_releases_json")
-val CanaryReleasesLastCheckedAtKey = longPreferencesKey("daily_nightly_releases_last_checked_at")
-val CanaryReleasesFingerprintKey = stringPreferencesKey("daily_nightly_releases_fingerprint")
-
 val TogetherOnlineEndpointCacheKey = stringPreferencesKey("together_online_endpoint_cache")
 val TogetherOnlineEndpointLastCheckedAtKey = longPreferencesKey("together_online_endpoint_last_checked_at")
 
 val RedownloadOnRestoreKey = booleanPreferencesKey("redownloadOnRestore")
-
-enum class UpdateChannel {
-    STABLE,
-    ARTIFACT,
-    ;
-
-    companion object {
-        fun fromStoredName(
-            value: String?,
-            defaultValue: UpdateChannel,
-        ): UpdateChannel =
-            when (value) {
-                "NIGHTLY", "DAILY_NIGHTLY", "CANARY" -> ARTIFACT
-                else -> entries.firstOrNull { it.name == value } ?: defaultValue
-            }
-    }
-}

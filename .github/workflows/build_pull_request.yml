@@ -66,13 +66,3 @@ jobs:
           API_BEARER_TOKEN: ${{ secrets.API_BEARER_TOKEN }}
           CANVAS_BEARER_TOKEN: ${{ secrets.CANVAS_BEARER_TOKEN }}
           EXTRACTOR_BEARER: ${{ secrets.EXTRACTOR_BEARER }}
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-mobile-universal-debug-pr-${{ github.event.number }}
-          path: |
-            app/build/outputs/apk/gms/mobile/universal/debug/*.apk
-            app/build/outputs/apk/gmsMobileUniversal/debug/*.apk
-            app/build/outputs/apk/mobile/universal/debug/*.apk
-            app/build/outputs/apk/mobileUniversal/debug/*.apk

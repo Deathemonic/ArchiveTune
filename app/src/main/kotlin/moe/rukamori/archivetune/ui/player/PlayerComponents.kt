@@ -908,7 +908,7 @@ fun PlayerTimeLabel(
     showRemainingTime: Boolean = false,
     centerContent: @Composable (() -> Unit)? = null,
 ) {
-    StreamingSourceTimeRow(
+    ModuleSourceTimeRow(
         position = makeTimeString(sliderPosition ?: position),
         duration = if (duration == C.TIME_UNSET) {
             ""
@@ -919,7 +919,10 @@ fun PlayerTimeLabel(
         },
         foreground = textBackgroundColor,
         modifier = Modifier.padding(horizontal = PlayerHorizontalPadding + 4.dp),
-        centerContent = { centerContent?.invoke() },
+        centerContent = {
+            if (LocalModuleSourcePill.current != null) ModuleSourcePill(foreground = textBackgroundColor)
+            else centerContent?.invoke()
+        },
     )
 }
 
@@ -2751,12 +2754,16 @@ private fun V8PlaybackProgress(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        StreamingSourceTimeRow(
+        ModuleSourceTimeRow(
             position = makeTimeString(sliderPosition ?: position),
             duration = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
             foreground = foreground,
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(top = 8.dp),
+            centerContent = {
+                if (LocalModuleSourcePill.current != null) ModuleSourcePill(foreground = foreground)
+                else if (currentFormat != null) V8QualityChip(currentFormat = currentFormat, foreground = foreground)
+            },
         )
     }
 }
@@ -3337,7 +3344,7 @@ private fun V9PortraitContent(
                         .height(36.dp),
                 )
 
-                StreamingSourceTimeRow(
+                ModuleSourceTimeRow(
                     position = makeTimeString(sliderPosition ?: displayedPosition.value),
                     duration = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
                     foreground = textBackgroundColor,
@@ -3725,7 +3732,7 @@ private fun V9PlaybackProgress(
                 .height(36.dp),
         )
 
-        StreamingSourceTimeRow(
+        ModuleSourceTimeRow(
             position = makeTimeString(sliderPosition ?: displayedPosition.value),
             duration = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
             foreground = textColor,
@@ -4831,7 +4838,7 @@ fun V10PlayerContent(
                         )
                     }
 
-                    StreamingSourceTimeRow(
+                    ModuleSourceTimeRow(
                         position = formatEditorialTime(displayedProgress.coerceAtLeast(0L)),
                         duration = formatEditorialTime(duration.coerceAtLeast(0L)),
                         foreground = accent,

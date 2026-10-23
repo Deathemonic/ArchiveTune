@@ -1316,4 +1316,6 @@
     <string name="source_match_save_failed">Could not save the selected track</string>
     <string name="usb_availability_unavailable">Could not check USB audio devices</string>
     <string name="usb_background_playback_unavailable">Background playback protection is unavailable. Playback may stop when the app is in the background.</string>
+    <string name="module_source_youtube" translatable="false">YouTube</string>
+    <string name="module_source_open_settings">Open %1$s settings</string>
 </resources>

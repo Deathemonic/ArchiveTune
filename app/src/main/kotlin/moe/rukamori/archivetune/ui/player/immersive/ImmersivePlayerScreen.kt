@@ -80,6 +80,9 @@ import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import moe.rukamori.archivetune.ui.player.LocalModuleSourcePill
+import moe.rukamori.archivetune.ui.player.ModuleSourcePill
+import moe.rukamori.archivetune.ui.player.ModuleSourceTimeRow
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.ui.player.StreamingSourceTimeRow
 import moe.rukamori.archivetune.ui.component.ListDialog
@@ -653,12 +656,24 @@ private fun ProgressSection(
         onValueChange = { onAction(ImmersivePlayerAction.PreviewSeek(it)) },
         onValueChangeFinished = { onAction(ImmersivePlayerAction.CommitSeek) },
     )
-    StreamingSourceTimeRow(
+    ModuleSourceTimeRow(
         position = makeTimeString(displayPosition),
         duration = stringResource(R.string.remaining_time, makeTimeString((model.durationMs - displayPosition).coerceAtLeast(0L))),
         foreground = ImmersiveContentColor,
         timeColor = ImmersiveSecondaryContentColor,
         style = MaterialTheme.typography.bodyMedium,
+        centerContent = {
+            if (LocalModuleSourcePill.current != null) {
+                ModuleSourcePill(foreground = ImmersiveContentColor)
+            } else if (showCodecOnPlayer && model.formatDetails.isNotBlank()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = model.outputDevice.type.imageVector, contentDescription = null,
+                        tint = ImmersiveContentColor, modifier = Modifier.size(17.dp))
+                    Text(text = model.formatDetails.substringBefore(" · "), color = ImmersiveContentColor,
+                        style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 5.dp))
+                }
+            }
+        },
     )
 }
 

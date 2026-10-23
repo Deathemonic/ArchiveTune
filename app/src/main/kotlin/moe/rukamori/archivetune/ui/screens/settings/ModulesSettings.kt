@@ -267,37 +267,44 @@ private fun ModuleRow(
         colors = ListItemDefaults.segmentedColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         contentPadding = PaddingValues(horizontal = SettingsDimensions.RowHorizontalPadding, vertical = SettingsDimensions.RowVerticalPadding),
         supportingContent = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (row.subtitle.isNotBlank()) Text(row.subtitle, style = MaterialTheme.typography.bodyMedium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    row.qualityTags.forEach { ModuleBadge(stringResource(it), accent = true) }
-                    row.capabilities.forEach { ModuleBadge(stringResource(it)) }
-                    ModuleBadge(stringResource(R.string.modules_position, row.position, model.rows.size), accent = true)
-                    ModuleBadge(if (row.playbackStatus) stringResource(R.string.modules_playback_status, stringResource(row.status)) else stringResource(row.status))
-                }
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    itemVerticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Switch(row.enabled, remember(row.id, onAction) { { onAction(ModuleSettingsAction.Enable(row.id, it)) } },
-                        enabled = model.busy == null,
-                        modifier = remember(row.name) { Modifier.semantics { contentDescription = row.name } })
-                    handle()
-                    ModuleMenu(model.menu == row.id, model.busy == null,
-                        remember(row.id, onAction) { { onAction(ModuleSettingsAction.Menu(row.id)) } },
-                        remember(onAction) { { onAction(ModuleSettingsAction.Menu(null)) } }) {
-                        ModuleMenuItem(R.string.modules_move_up, row.position > 1, onAction, ModuleSettingsAction.Move(row.id, -1))
-                        ModuleMenuItem(R.string.modules_move_down, row.position < model.rows.size, onAction, ModuleSettingsAction.Move(row.id, 1))
-                        ModuleMenuItem(R.string.modules_check, true, onAction, ModuleSettingsAction.Check(row.id))
-                        ModuleMenuItem(R.string.modules_check_update, row.canUpdate, onAction, ModuleSettingsAction.Update(row.id))
-                        ModuleMenuItem(R.string.modules_remove, true, onAction, ModuleSettingsAction.Remove(row.id, false))
-                    }
-                }
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                row.qualityTags.forEach { ModuleBadge(stringResource(it), accent = true) }
+                row.capabilities.forEach { ModuleBadge(stringResource(it)) }
+                ModuleBadge(if (row.playbackStatus) stringResource(R.string.modules_playback_status, stringResource(row.status)) else stringResource(row.status))
             }
         },
-    ) { Text(row.name, style = MaterialTheme.typography.titleMediumEmphasized) }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            handle()
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(row.name, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (row.subtitle.isNotBlank()) Text(row.subtitle, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ModuleMenu(model.menu == row.id, model.busy == null,
+                    remember(row.id, onAction) { { onAction(ModuleSettingsAction.Menu(row.id)) } },
+                    remember(onAction) { { onAction(ModuleSettingsAction.Menu(null)) } }) {
+                    ModuleMenuItem(R.string.modules_move_up, row.position > 1, onAction, ModuleSettingsAction.Move(row.id, -1))
+                    ModuleMenuItem(R.string.modules_move_down, row.position < model.rows.size, onAction, ModuleSettingsAction.Move(row.id, 1))
+                    ModuleMenuItem(R.string.modules_check, true, onAction, ModuleSettingsAction.Check(row.id))
+                    ModuleMenuItem(R.string.modules_check_update, row.canUpdate, onAction, ModuleSettingsAction.Update(row.id))
+                    ModuleMenuItem(R.string.modules_remove, true, onAction, ModuleSettingsAction.Remove(row.id, false))
+                }
+                Switch(row.enabled, remember(row.id, onAction) { { onAction(ModuleSettingsAction.Enable(row.id, it)) } },
+                    enabled = model.busy == null,
+                    modifier = remember(row.name) { Modifier.semantics { contentDescription = row.name } })
+            }
+        }
+    }
 }
 
 @Composable
@@ -309,6 +316,7 @@ private fun ModuleCatalogRow(row: ModuleCatalogRowUi, model: ModuleSettingsUiMod
         enabled = model.busy == null,
         colors = ListItemDefaults.segmentedColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         contentPadding = PaddingValues(horizontal = SettingsDimensions.RowHorizontalPadding, vertical = SettingsDimensions.RowVerticalPadding),
+        verticalAlignment = Alignment.CenterVertically,
         leadingContent = { ModuleListIcon(R.drawable.language) },
         trailingContent = {
             ModuleMenu(model.menu == row.id, model.busy == null,

@@ -15,7 +15,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -35,7 +34,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
@@ -52,7 +50,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
@@ -140,7 +137,6 @@ internal fun AppleMusicNavigationToolbar(
                                 AppleMusicNavigationItem(
                                     screen = screen,
                                     selected = isSelected(screen),
-                                    showLabel = true,
                                     modifier = Modifier.weight(1f).fillMaxHeight(),
                                     onItemClick = onItemClick,
                                     onSearchItemDoubleClick = onSearchItemDoubleClick,
@@ -161,7 +157,6 @@ internal fun AppleMusicNavigationToolbar(
                     AppleMusicNavigationItem(
                         screen = Screens.Search,
                         selected = isSelected(Screens.Search),
-                        showLabel = false,
                         modifier = Modifier.fillMaxSize(),
                         onItemClick = onItemClick,
                         onSearchItemDoubleClick = onSearchItemDoubleClick,
@@ -176,7 +171,6 @@ internal fun AppleMusicNavigationToolbar(
 private fun AppleMusicNavigationItem(
     screen: Screens,
     selected: Boolean,
-    showLabel: Boolean,
     modifier: Modifier,
     onItemClick: (Screens, Boolean) -> Unit,
     onSearchItemDoubleClick: (() -> Unit)?,
@@ -196,15 +190,12 @@ private fun AppleMusicNavigationItem(
     val shape = remember { RoundedCornerShape(percent = 50) }
     val onClick = rememberNavigationItemClick(screen, selected, onItemClick, onSearchItemDoubleClick)
     val title = stringResource(screen.titleId)
-    Column(
+    Box(
         modifier = modifier
             .clip(shape)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
-            .semantics {
-                if (!showLabel) contentDescription = title
-            },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+            .semantics { contentDescription = title },
+        contentAlignment = Alignment.Center,
     ) {
         Crossfade(
             targetState = selected,
@@ -215,20 +206,10 @@ private fun AppleMusicNavigationItem(
                 painter = painterResource(if (active) screen.iconIdActive else screen.iconIdInactive),
                 contentDescription = null,
                 tint = tint.value,
-                modifier = Modifier.size(26.dp).graphicsLayer {
+                modifier = Modifier.size(32.dp).graphicsLayer {
                     scaleX = scale.value
                     scaleY = scale.value
                 },
-            )
-        }
-        if (showLabel) {
-            Text(
-                text = title,
-                color = tint.value,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 4.dp),
             )
         }
     }

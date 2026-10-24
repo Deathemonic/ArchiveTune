@@ -916,6 +916,12 @@ fun AppearanceSettings(navController: NavController) {
                         title = { Text(stringResource(R.string.navigation_bar_background_style)) },
                         icon = { Icon(painterResource(R.drawable.gradient), null) },
                         selectedValue = navigationBarBackground,
+                        isEnabled = navigationBarMode != NavigationBarMode.APPLE_MUSIC,
+                        description = if (navigationBarMode == NavigationBarMode.APPLE_MUSIC) {
+                            stringResource(R.string.navigation_bar_background_apple_music)
+                        } else {
+                            null
+                        },
                         onValueSelected = onNavigationBarBackgroundSelected,
                         valueText = {
                             when (it) {
@@ -938,6 +944,7 @@ fun AppearanceSettings(navController: NavController) {
                             when (it) {
                                 NavigationBarMode.CONNECTED -> stringResource(R.string.navigation_bar_mode_connected)
                                 NavigationBarMode.STANDALONE -> stringResource(R.string.navigation_bar_mode_standalone)
+                                NavigationBarMode.APPLE_MUSIC -> stringResource(R.string.navigation_bar_mode_apple_music)
                             }
                         },
                     )

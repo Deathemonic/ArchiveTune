@@ -720,6 +720,7 @@ enum class NavigationBarBackgroundStyle {
 enum class NavigationBarMode {
     CONNECTED,
     STANDALONE,
+    APPLE_MUSIC,
 }
 
 // Keys for customized background

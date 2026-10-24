@@ -71,6 +71,18 @@ fun FloatingNavigationToolbar(
     onItemClick: (Screens, Boolean) -> Unit,
     onSearchItemDoubleClick: (() -> Unit)? = null,
 ) {
+    if (navigationBarMode == NavigationBarMode.APPLE_MUSIC) {
+        AppleMusicNavigationToolbar(
+            items = items,
+            pureBlack = pureBlack,
+            hazeState = hazeState,
+            modifier = modifier,
+            isSelected = isSelected,
+            onItemClick = onItemClick,
+            onSearchItemDoubleClick = onSearchItemDoubleClick,
+        )
+        return
+    }
     val miniPlayerProximity =
         if (navigationBarMode == NavigationBarMode.CONNECTED) miniPlayerProximityProvider() else 0f
     val navigationShape =
@@ -144,27 +156,9 @@ fun FloatingNavigationToolbar(
                     ) {
                         items.forEach { screen ->
                             val selected = isSelected(screen)
-                            val onDoubleClick =
-                                remember(screen, onSearchItemDoubleClick) {
-                                    if (screen == Screens.Search) onSearchItemDoubleClick else null
-                                }
-                            val lastClickTime = remember(screen) { mutableLongStateOf(0L) }
-                            val onClick =
-                                remember(screen, selected, onItemClick, onDoubleClick) {
-                                    {
-                                        val currentTime = SystemClock.uptimeMillis()
-                                        val isDoubleClick =
-                                            onDoubleClick != null &&
-                                                currentTime - lastClickTime.longValue <= ViewConfiguration.getDoubleTapTimeout()
-                                        lastClickTime.longValue = if (isDoubleClick) 0L else currentTime
-                                        if (isDoubleClick) {
-                                            onDoubleClick?.invoke()
-                                            Unit
-                                        } else {
-                                            onItemClick(screen, selected)
-                                        }
-                                    }
-                                }
+                            val onClick = rememberNavigationItemClick(
+                                screen, selected, onItemClick, onSearchItemDoubleClick,
+                            )
 
                             ShortNavigationBarItem(
                                 selected = selected,
@@ -195,6 +189,31 @@ fun FloatingNavigationToolbar(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun rememberNavigationItemClick(
+    screen: Screens,
+    selected: Boolean,
+    onItemClick: (Screens, Boolean) -> Unit,
+    onSearchItemDoubleClick: (() -> Unit)?,
+): () -> Unit {
+    val lastClickTime = remember(screen) { mutableLongStateOf(0L) }
+    val onDoubleClick = if (screen == Screens.Search) onSearchItemDoubleClick else null
+    return remember(screen, selected, onItemClick, onDoubleClick) {
+        {
+            val currentTime = SystemClock.uptimeMillis()
+            val isDoubleClick = onDoubleClick != null && lastClickTime.longValue != 0L &&
+                currentTime - lastClickTime.longValue <= ViewConfiguration.getDoubleTapTimeout()
+            lastClickTime.longValue = if (isDoubleClick) 0L else currentTime
+            if (isDoubleClick) {
+                onDoubleClick?.invoke()
+                Unit
+            } else {
+                onItemClick(screen, selected)
             }
         }
     }

@@ -722,7 +722,6 @@
     <string name="enable_youlyplus_lyrics">تفعيل كلمات YouLyPlus</string>
     <string name="enable_unison_lyrics">تفعيل كلمات Unison</string>
     <string name="enable_megalobiz_lyrics">تفعيل كلمات Megalobiz</string>
-    <string name="enable_paxsenix_lyrics">تفعيل كلمات Paxsenix</string>
     <string name="low_data_mode_title">وضع توفير البيانات</string>
     <string name="low_data_mode_description">يقلل استخدام بيانات الجوال باستخدام بث منخفض الجودة وتعطيل ذاكرة التشغيل والشاشة التفاعلية على شبكات الهاتف</string>
     <string name="permanent_shuffle">وضع التشغيل العشوائي الدائم</string>

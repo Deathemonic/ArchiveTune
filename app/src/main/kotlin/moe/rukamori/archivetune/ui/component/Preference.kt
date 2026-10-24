@@ -442,8 +442,7 @@ fun <T : Any> MultiSelectListPreference(
                 coroutineScope
                     .launch {
                         sheetState.hide()
-                    }.invokeOnCompletion {
-                        completion()
+                        if (!sheetState.isVisible) completion()
                     }
             }
         }
@@ -535,6 +534,7 @@ private fun <T : Any> MultiSelectPreferenceBottomSheet(
                 modifier =
                     Modifier
                         .fillMaxWidth()
+                        .weight(1f, fill = false)
                         .heightIn(max = 520.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 12.dp),

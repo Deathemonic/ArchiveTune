@@ -551,7 +551,6 @@
     <string name="enable_unison_lyrics">Enable Unison lyrics</string>
     <string name="enable_simpmusic_lyrics">Enable SimpMusic lyrics</string>
     <string name="enable_megalobiz_lyrics">Enable Megalobiz lyrics</string>
-    <string name="enable_paxsenix_lyrics">Enable Paxsenix lyrics</string>
     <string name="paxsenix_api_key">Paxsenix API key</string>
     <string name="paxsenix_api_key_configured">Configured</string>
     <string name="paxsenix_api_key_missing">Required for authenticated Paxsenix requests</string>
@@ -695,6 +694,7 @@
     <string name="total_requests">Total Requests</string>
     <string name="success_rate">Success Rate</string>
     <string name="providers">Providers</string>
+    <string name="lyrics_enabled_providers">Enabled providers</string>
     <string name="paxsenix_status_operational">Operational</string>
     <string name="paxsenix_status_degraded">Degraded</string>
     <string name="paxsenix_status_down">Down</string>

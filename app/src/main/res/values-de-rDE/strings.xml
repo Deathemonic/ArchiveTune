@@ -446,7 +446,6 @@
     <string name="backdrop_blur_amount_value">%1$d%%</string>
     <string name="enable_unison_lyrics">Unison-Songtexte aktivieren</string>
     <string name="enable_simpmusic_lyrics">SimpMusic-Songtexte aktivieren</string>
-    <string name="enable_paxsenix_lyrics">Paxsenix-Songtexte aktivieren</string>
     <string name="low_data_mode_title">Datensparmodus</string>
     <string name="low_data_mode_description">Reduziert den mobilen Datenverbrauch, indem in Netzwerken mit Datenvolumenbegrenzung Streams in niedriger Qualität verwendet und die Wiedergabecache-Funktion sowie Canvas deaktiviert werden</string>
     <string name="permanent_shuffle">Permanenter Shuffle-Modus</string>

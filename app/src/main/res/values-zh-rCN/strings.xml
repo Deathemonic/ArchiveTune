@@ -766,7 +766,6 @@
     <string name="enable_youlyplus_lyrics">启用 YouLyPlus 歌词</string>
     <string name="enable_unison_lyrics">启用 Unison 歌词</string>
     <string name="enable_megalobiz_lyrics">启用 Megalobiz 歌词</string>
-    <string name="enable_paxsenix_lyrics">启用 Paxsenix 歌词</string>
     <string name="low_data_mode_title">省流量模式 / 低数据模式</string>
     <string name="low_data_mode_description">在按流量计费的网络下，通过降低音质并禁用播放缓存和动态封面，以减少移动数据消耗</string>
     <string name="device_mute_recovery_volume">恢复音量（从 0 调高）</string>

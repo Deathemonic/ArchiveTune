@@ -72,6 +72,7 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.EnableBetterLyricsKey
 import moe.rukamori.archivetune.constants.EnableBetterLyricsPortatoKey
+import moe.rukamori.archivetune.constants.EnableBinimumLyricsKey
 import moe.rukamori.archivetune.constants.EnableKugouKey
 import moe.rukamori.archivetune.constants.EnableLrcLibKey
 import moe.rukamori.archivetune.constants.EnableMegalobizLyricsKey
@@ -167,6 +168,8 @@ fun LyricsSettings(
         rememberPreference(key = EnableBetterLyricsPortatoKey, defaultValue = true)
     val (enableYouLyPlusLyrics, onEnableYouLyPlusLyricsChange) =
         rememberPreference(key = EnableYouLyPlusLyricsKey, defaultValue = true)
+    val (enableBinimumLyrics, onEnableBinimumLyricsChange) =
+        rememberPreference(key = EnableBinimumLyricsKey, defaultValue = true)
     val (enableSimpMusicLyrics, onEnableSimpMusicLyricsChange) = rememberPreference(key = EnableSimpMusicLyricsKey, defaultValue = true)
     val (enableMegalobizLyrics, onEnableMegalobizLyricsChange) = rememberPreference(key = EnableMegalobizLyricsKey, defaultValue = true)
     val (enablePaxsenixLyrics, onEnablePaxsenixLyricsChange) = rememberPreference(key = EnablePaxsenixLyricsKey, defaultValue = true)
@@ -493,6 +496,15 @@ fun LyricsSettings(
 
             item {
                 SwitchPreference(
+                    title = { Text(stringResource(R.string.enable_binimum_lyrics)) },
+                    icon = { Icon(painterResource(R.drawable.lyrics), null) },
+                    checked = enableBinimumLyrics,
+                    onCheckedChange = onEnableBinimumLyricsChange,
+                )
+            }
+
+            item {
+                SwitchPreference(
                     title = { Text(stringResource(R.string.enable_lrclib)) },
                     icon = { Icon(painterResource(R.drawable.lyrics), null) },
                     checked = enableLrclib,
@@ -690,6 +702,7 @@ private fun PreferredLyricsProvider.displayName(): String =
         PreferredLyricsProvider.BETTER_LYRICS -> "BetterLyrics"
         PreferredLyricsProvider.BETTER_LYRICS_PORTATO -> "BetterLyrics Portato"
         PreferredLyricsProvider.YOULY_PLUS -> "YouLyPlus"
+        PreferredLyricsProvider.BINIMUM -> stringResource(R.string.binimum_lyrics)
         PreferredLyricsProvider.SIMPMUSIC -> "SimpMusic"
         PreferredLyricsProvider.PAXSENIX_APPLE_MUSIC -> stringResource(R.string.paxsenix_apple_music)
         PreferredLyricsProvider.PAXSENIX_SPOTIFY -> stringResource(R.string.paxsenix_spotify)

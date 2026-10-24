@@ -1864,8 +1864,18 @@ private fun FeaturedPlaylistCard(
         }
     val secondaryEndpoint = card.radioEndpoint ?: card.shuffleEndpoint
     val playSecondary =
-        remember(secondaryEndpoint, playerConnection) {
-            secondaryEndpoint?.let { endpoint -> { playerConnection.playQueue(YouTubeQueue.playlist(endpoint)) } }
+        remember(card.id, card.radioEndpoint, secondaryEndpoint, playerConnection) {
+            secondaryEndpoint?.let { endpoint ->
+                {
+                    val queue =
+                        if (card.radioEndpoint != null) {
+                            YouTubeQueue.playlist(endpoint)
+                        } else {
+                            YouTubeQueue.shuffledPlaylist(card.id, endpoint)
+                        }
+                    playerConnection.playQueue(queue)
+                }
+            }
         }
     val showPlaylistMenu =
         remember(playlist, menuState, scope) {

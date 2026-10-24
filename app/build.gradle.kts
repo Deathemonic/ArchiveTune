@@ -121,7 +121,6 @@ android {
                 ?: "ArchiveTune"
         buildConfigField("String", "GITHUB_OWNER", githubOwner.asBuildConfigString())
         buildConfigField("String", "GITHUB_REPO", githubRepo.asBuildConfigString())
-        buildConfigField("boolean", "IS_NIGHTLY_BUILD", "false")
 
         val releaseGithubOwner =
             System.getenv("RELEASE_GITHUB_OWNER")?.trim()
@@ -236,19 +235,7 @@ android {
                 "proguard-rules.pro"
             )
             buildConfigField("boolean", "LEAK_CANARY_TOGGLE_AVAILABLE", "true")
-            buildConfigField("boolean", "IS_NIGHTLY_BUILD", "true")
             matchingFallbacks += listOf("release")
-
-            val nightlyReleaseOwner =
-                System.getenv("NIGHTLY_RELEASE_GITHUB_OWNER")?.trim()
-                    ?: localProperties.getProperty("NIGHTLY_RELEASE_GITHUB_OWNER")?.trim()
-                    ?: "rukamori"
-            val nightlyReleaseRepo =
-                System.getenv("NIGHTLY_RELEASE_GITHUB_REPO")?.trim()
-                    ?: localProperties.getProperty("NIGHTLY_RELEASE_GITHUB_REPO")?.trim()
-                    ?: "canary"
-            buildConfigField("String", "RELEASE_GITHUB_OWNER", nightlyReleaseOwner.asBuildConfigString())
-            buildConfigField("String", "RELEASE_GITHUB_REPO", nightlyReleaseRepo.asBuildConfigString())
         }
     }
 

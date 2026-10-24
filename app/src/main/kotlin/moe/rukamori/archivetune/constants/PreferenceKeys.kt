@@ -201,6 +201,7 @@ val EnableLrcLibKey = booleanPreferencesKey("enableLrclib")
 val EnableBetterLyricsKey = booleanPreferencesKey("enableBetterLyrics")
 val EnableBetterLyricsPortatoKey = booleanPreferencesKey("enableBetterLyricsPortato")
 val EnableYouLyPlusLyricsKey = booleanPreferencesKey("enableYouLyPlusLyrics")
+val EnableBinimumLyricsKey = booleanPreferencesKey("enableBinimumLyrics")
 val EnableSimpMusicLyricsKey = booleanPreferencesKey("enableSimpMusicLyrics")
 val EnableMegalobizLyricsKey = booleanPreferencesKey("enableMegalobizLyrics")
 val EnablePaxsenixLyricsKey = booleanPreferencesKey("enablePaxsenixLyrics")
@@ -603,6 +604,7 @@ enum class PreferredLyricsProvider {
     BETTER_LYRICS,
     BETTER_LYRICS_PORTATO,
     YOULY_PLUS,
+    BINIMUM,
     LRCLIB,
     KUGOU,
     MEGALOBIZ,
@@ -618,6 +620,7 @@ val DefaultLyricsProviderOrder =
         PreferredLyricsProvider.BETTER_LYRICS,
         PreferredLyricsProvider.BETTER_LYRICS_PORTATO,
         PreferredLyricsProvider.YOULY_PLUS,
+        PreferredLyricsProvider.BINIMUM,
         PreferredLyricsProvider.LRCLIB,
         PreferredLyricsProvider.KUGOU,
         PreferredLyricsProvider.MEGALOBIZ,
@@ -717,6 +720,7 @@ enum class NavigationBarBackgroundStyle {
 enum class NavigationBarMode {
     CONNECTED,
     STANDALONE,
+    APPLE_MUSIC,
 }
 
 // Keys for customized background
@@ -915,7 +919,6 @@ val RemindAfterKey = intPreferencesKey("remind_after")
 // Update settings
 val AutomaticUpdateCheckKey = booleanPreferencesKey("automaticUpdateCheck")
 val EnableUpdateNotificationKey = booleanPreferencesKey("enableUpdateNotification")
-val UpdateChannelKey = stringPreferencesKey("updateChannel")
 val LastUpdateCheckKey = longPreferencesKey("lastUpdateCheck")
 val LastNotifiedVersionKey = stringPreferencesKey("lastNotifiedVersion")
 
@@ -930,29 +933,7 @@ val GitHubReleasesJsonKey = stringPreferencesKey("github_releases_json")
 val GitHubReleasesLastCheckedAtKey = longPreferencesKey("github_releases_last_checked_at")
 val GitHubReleasesFingerprintKey = stringPreferencesKey("github_releases_fingerprint")
 
-val CanaryReleasesEtagKey = stringPreferencesKey("daily_nightly_releases_etag")
-val CanaryReleasesJsonKey = stringPreferencesKey("daily_nightly_releases_json")
-val CanaryReleasesLastCheckedAtKey = longPreferencesKey("daily_nightly_releases_last_checked_at")
-val CanaryReleasesFingerprintKey = stringPreferencesKey("daily_nightly_releases_fingerprint")
-
 val TogetherOnlineEndpointCacheKey = stringPreferencesKey("together_online_endpoint_cache")
 val TogetherOnlineEndpointLastCheckedAtKey = longPreferencesKey("together_online_endpoint_last_checked_at")
 
 val RedownloadOnRestoreKey = booleanPreferencesKey("redownloadOnRestore")
-
-enum class UpdateChannel {
-    STABLE,
-    ARTIFACT,
-    ;
-
-    companion object {
-        fun fromStoredName(
-            value: String?,
-            defaultValue: UpdateChannel,
-        ): UpdateChannel =
-            when (value) {
-                "NIGHTLY", "DAILY_NIGHTLY", "CANARY" -> ARTIFACT
-                else -> entries.firstOrNull { it.name == value } ?: defaultValue
-            }
-    }
-}

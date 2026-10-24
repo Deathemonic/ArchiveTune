@@ -77,6 +77,18 @@ class YouTubeQueue(
     }
 
     companion object {
+        fun shuffledPlaylist(
+            playlistId: String,
+            endpoint: WatchEndpoint,
+        ): Queue {
+            val normalizedId = playlistId.removePrefix("VL")
+            return if (normalizedId.startsWith("RD")) {
+                playlist(endpoint)
+            } else {
+                YouTubePlaylistShuffleQueue(normalizedId)
+            }
+        }
+
         fun playlist(
             endpoint: WatchEndpoint,
             preloadItem: MediaMetadata? = null,

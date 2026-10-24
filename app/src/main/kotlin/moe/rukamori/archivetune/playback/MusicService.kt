@@ -202,6 +202,7 @@ import moe.rukamori.archivetune.extensions.collectLatest
 import moe.rukamori.archivetune.extensions.currentMetadata
 import moe.rukamori.archivetune.extensions.directorySizeBytes
 import moe.rukamori.archivetune.extensions.findNextMediaItemById
+import moe.rukamori.archivetune.extensions.getCurrentQueueIndex
 import moe.rukamori.archivetune.extensions.getQueueWindows
 import moe.rukamori.archivetune.extensions.mediaItems
 import moe.rukamori.archivetune.extensions.metadata
@@ -4016,7 +4017,7 @@ class MusicService :
             }
             ensureScopesActive()
             scope.launch(SilentHandler) {
-                val initialStatus =
+                val initialStatus = try {
                     withContext(Dispatchers.IO) {
                         queue
                             .getInitialStatus()
@@ -4025,6 +4026,13 @@ class MusicService :
                                 hideVideo = dataStore.get(HideVideoKey, false),
                             )
                     }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Timber.e(error, "Failed to load requested queue")
+                    Toast.makeText(this@MusicService, R.string.queue_action_failed, Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
 
                 val targetItem =
                     initialStatus.items.getOrNull(initialStatus.mediaItemIndex)
@@ -4111,12 +4119,23 @@ class MusicService :
                 player.prepare()
                 player.playWhenReady = playWhenReady
             }
-            var initialStatus =
+            var initialStatus = try {
                 withContext(Dispatchers.IO) {
                     queue
                         .getInitialStatus()
                         .filterPlaybackContent(hideExplicit, hideVideo)
                 }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Timber.e(error, "Failed to load playback queue")
+                if (currentQueue === queue) {
+                    currentQueue = EmptyQueue
+                    initialQueueJob = null
+                    Toast.makeText(this@MusicService, R.string.queue_action_failed, Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
             if (!autoLoadMoreEnabled && queue.shouldExpandToFullQueueWhenAutoLoadMoreDisabled() && queue.hasNextPage()) {
                 val expandedItems = initialStatus.items.toMutableList()
                 var pagesLoaded = 0
@@ -4146,7 +4165,13 @@ class MusicService :
             if (initialStatus.title != null) {
                 queueTitle = initialStatus.title
             }
-            if (initialStatus.items.isEmpty()) return@launch
+            if (initialStatus.items.isEmpty()) {
+                currentQueue = EmptyQueue
+                queueTitle = null
+                initialQueueJob = null
+                player.clearMediaItems()
+                return@launch
+            }
             if (preloadItem != null) {
                 val preloadMediaId = preloadItem.mediaId.trim()
                 val insertionIndex =
@@ -4178,6 +4203,15 @@ class MusicService :
             }
 
             initialQueueJob = null
+            if (
+                autoLoadMoreEnabled &&
+                player.currentMetadata?.isPodcast != true &&
+                !queue.recommendationOnlyContinuation &&
+                queue.hasNextPage() &&
+                player.mediaItemCount - player.getCurrentQueueIndex() <= 5
+            ) {
+                extendExplicitQueue()
+            }
             if (
                 autoLoadMoreEnabled &&
                 player.currentMetadata?.isPodcast != true &&
@@ -7044,23 +7078,14 @@ class MusicService :
 
         scrobbleManager?.onSongStop()
 
-        if (!timelineEmpty &&
-            dataStore.get(AutoLoadMoreKey, true) &&
-            reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT &&
-            player.repeatMode == REPEAT_MODE_OFF
-        ) {
-            // No redundant seeding update check.
-        }
-
-        // Auto-load more from queue if available
         if (!suppressAutoPlayback &&
             !timelineEmpty &&
             currentMediaMetadata.value?.isPodcast != true &&
             dataStore.get(AutoLoadMoreKey, true) &&
-            reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT &&
-            player.mediaItemCount - player.currentMediaItemIndex <= 5 &&
+            player.mediaItemCount - player.getCurrentQueueIndex() <= 5 &&
             currentQueue.hasNextPage() &&
-            player.repeatMode == REPEAT_MODE_OFF
+            (!currentQueue.recommendationOnlyContinuation ||
+                (reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT && player.repeatMode == REPEAT_MODE_OFF))
         ) {
             extendExplicitQueue()
         }

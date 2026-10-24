@@ -411,7 +411,7 @@ fun OnlinePlaylistScreen(
                                     playlist.shuffleEndpoint?.let { shuffleEndpoint ->
                                         {
                                             playerConnection.playQueue(
-                                                YouTubeQueue.playlist(shuffleEndpoint),
+                                                YouTubeQueue.shuffledPlaylist(playlist.id, shuffleEndpoint),
                                             )
                                         }
                                     },
@@ -609,7 +609,7 @@ fun OnlinePlaylistScreen(
                                             contentColor = contentColor,
                                             onClick = {
                                                 playerConnection.playQueue(
-                                                    YouTubeQueue.playlist(mixEndpoint),
+                                                    YouTubeQueue.shuffledPlaylist(playlist.id, mixEndpoint),
                                                 )
                                             },
                                         )

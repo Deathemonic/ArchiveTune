@@ -239,8 +239,6 @@ import moe.rukamori.archivetune.constants.SYSTEM_DEFAULT
 import moe.rukamori.archivetune.constants.SearchSource
 import moe.rukamori.archivetune.constants.SearchSourceKey
 import moe.rukamori.archivetune.constants.StopMusicOnTaskClearKey
-import moe.rukamori.archivetune.constants.UpdateChannel
-import moe.rukamori.archivetune.constants.UpdateChannelKey
 import moe.rukamori.archivetune.constants.UseSystemFontKey
 import moe.rukamori.archivetune.db.MusicDatabase
 import moe.rukamori.archivetune.db.entities.Album
@@ -369,7 +367,6 @@ class MainActivity : ComponentActivity() {
     private var pendingTogetherJoinLink: String? = null
     private var pendingBackupRestoreUri by mutableStateOf<Uri?>(null)
     private var latestVersionName by mutableStateOf(BuildConfig.VERSION_NAME)
-    private var latestUpdateChannel by mutableStateOf(defaultUpdateChannel)
 
     private var playerConnection by mutableStateOf<PlayerConnection?>(null)
     private var isMusicServiceBound = false
@@ -645,7 +642,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            val updateChannel by rememberEnumPreference(UpdateChannelKey, defaultValue = defaultUpdateChannel)
             val updateSettingsFlow = remember(observeUpdateSettings) { observeUpdateSettings() }
             val updateSettings by
                 updateSettingsFlow.collectAsStateWithLifecycle(
@@ -699,18 +695,15 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(
                 updateSettings?.automaticChecksEnabled,
                 updateSettings?.notificationsEnabled,
-                updateChannel,
             ) {
                 val currentUpdateSettings = updateSettings ?: return@LaunchedEffect
                 if (
                     currentUpdateSettings.automaticChecksEnabled &&
                     BuildConfig.UPDATER_AVAILABLE &&
-                    updateChannel != UpdateChannel.ARTIFACT &&
                     System.currentTimeMillis() - Updater.lastCheckTime > 1.days.inWholeMilliseconds
                 ) {
                     Updater.getLatestVersionName().onSuccess { latestVersion ->
                         if (Updater.isUpdateAvailable(latestVersion, BuildConfig.VERSION_NAME)) {
-                            latestUpdateChannel = UpdateChannel.STABLE
                             latestVersionName = latestVersion
                         }
                     }
@@ -802,18 +795,12 @@ class MainActivity : ComponentActivity() {
             }
 
             // fetch release notes and show sheet when a new version is detected
-            LaunchedEffect(latestVersionName, latestUpdateChannel, updateChannel) {
+            LaunchedEffect(latestVersionName) {
                 if (
                     BuildConfig.UPDATER_AVAILABLE &&
-                    latestUpdateChannel == updateChannel &&
-                    latestUpdateChannel != UpdateChannel.ARTIFACT &&
                     Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
                 ) {
-                    val releaseNotesResult =
-                        when (latestUpdateChannel) {
-                            UpdateChannel.STABLE -> Updater.getLatestReleaseNotes()
-                            else -> return@LaunchedEffect
-                        }
+                    val releaseNotesResult = Updater.getLatestReleaseNotes()
                     releaseNotesResult
                         .onSuccess {
                             releaseNotesState.value = it
@@ -1955,8 +1942,6 @@ class MainActivity : ComponentActivity() {
                                                     actions = {
                                                         val hasUpdateAvailable =
                                                             BuildConfig.UPDATER_AVAILABLE &&
-                                                                latestUpdateChannel == updateChannel &&
-                                                                latestUpdateChannel != UpdateChannel.ARTIFACT &&
                                                                 Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
                                                         val newsTooltipState = rememberTooltipState()
                                                         val newsLifecycleOwner = LocalLifecycleOwner.current
